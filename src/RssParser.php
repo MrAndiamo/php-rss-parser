@@ -10,29 +10,34 @@ use Timvandendries\PhpRssParser\objects\ItemObject;
 class RssParser {
 
 
-    public const RSS_1_0_PATTERN = '{xml-stylesheet href="/public/style.xsl" type="text/xsl"}';
-    public const RSS_2_0_PATTERN = '{rss version="2.0"}';
-    public const RSS_1_0_ATOM_PATTERN = '{http://www.w3.org/2005/Atom}';
+    public const RSS_1_0_PATTERN = '<?xml version="1.0" encoding="UTF-8"?><?xml-stylesheet href="/public/style.xsl" type="text/xsl"?>';
+    public const RSS_2_0_PATTERN = '<?xml version="1.0" encoding="iso-8859-15"?><rss version="2.0">';
+    public const ATOM_RSS_PATTERN = '<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom">';
 
     /**
      * @param string $url
      * @return FeedObject
      */
     public function getFeed(string $url){
-
         $cUrl = curl_init($url);
         curl_setopt($cUrl, CURLOPT_RETURNTRANSFER, true);
         $data = curl_exec($cUrl);
-        curl_close($cUrl);
-        if(preg_match(self::RSS_1_0_ATOM_PATTERN, $data)) {
+
+        if(substr(str_replace(array("\r", "\n"), '', $data), 0, 80) == self::ATOM_RSS_PATTERN) {
+            echo 'Atom RSS';
             $feed = $this->getAtomFeedByUrl($url);
-        } elseif(preg_match(self::RSS_2_0_PATTERN, $data)) {
+        } elseif(substr(str_replace(array("\r", "\n"), '', $data), 0, 63) == self::RSS_2_0_PATTERN) {
+            echo 'RSS 2.0';
             $feed = $this->getRSS2FeedByUrl($url);
-        } elseif(preg_match(self::RSS_1_0_PATTERN, $data)) {
+        } elseif (substr(str_replace(array("\r", "\n"), '', $data), 0, 97) == self::RSS_1_0_PATTERN) {
+            echo 'RSS 1.0';
             $feed = $this->getRSS1FeedByUrl($url);
         } else {
+            echo 'bad';
             $feed = new FeedObject();
+            $feed->items = [new ItemObject()];
         }
+
 
         return $feed;
 
