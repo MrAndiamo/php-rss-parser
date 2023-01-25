@@ -32,7 +32,7 @@ class FeedObject {
         'published'     => 'published',
         'siteUrl'       => 'siteUrl',
         'feedUrl'       => 'imageUrl',
-        'items'         => 'imageUrl',
+        'items'         => 'items',
     ];
 
     protected array $_field_types = [

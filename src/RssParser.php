@@ -9,10 +9,7 @@ use Timvandendries\PhpRssParser\objects\ItemObject;
 
 class RssParser {
 
-
-    public const RSS_1_0_PATTERN = '<?xml version="1.0" encoding="UTF-8"?><?xml-stylesheet href="/public/style.xsl" type="text/xsl"?>';
-    public const RSS_2_0_PATTERN = '<?xml version="1.0" encoding="iso-8859-15"?><rss version="2.0">';
-    public const ATOM_RSS_PATTERN = '<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom">';
+    public const ATOM_RSS_PATTERN = '<feed xmlns="http://www.w3.org/2005/Atom">';
 
     /**
      * @param string $url
@@ -22,25 +19,16 @@ class RssParser {
         $cUrl = curl_init($url);
         curl_setopt($cUrl, CURLOPT_RETURNTRANSFER, true);
         $data = curl_exec($cUrl);
-
-        if(substr(str_replace(array("\r", "\n"), '', $data), 0, 80) == self::ATOM_RSS_PATTERN) {
+        $data =  preg_replace('/^.+\n/', '', $data);
+        if(substr(str_replace(array("\r", "\n"), '', $data), 0, 42) == self::ATOM_RSS_PATTERN) {
             echo 'Atom RSS';
             $feed = $this->getAtomFeedByUrl($url);
-        } elseif(substr(str_replace(array("\r", "\n"), '', $data), 0, 63) == self::RSS_2_0_PATTERN) {
-            echo 'RSS 2.0';
-            $feed = $this->getRSS2FeedByUrl($url);
-        } elseif (substr(str_replace(array("\r", "\n"), '', $data), 0, 97) == self::RSS_1_0_PATTERN) {
-            echo 'RSS 1.0';
-            $feed = $this->getRSS1FeedByUrl($url);
         } else {
-            echo 'bad';
-            $feed = new FeedObject();
-            $feed->items = [new ItemObject()];
+            echo 'RSS 2.0';
+            $feed = $this->getRSSFeedByUrl($url);
         }
 
-
         return $feed;
-
     }
 
 
@@ -55,12 +43,12 @@ class RssParser {
         $feed = new FeedObject();
         $feed->id = (string) $feedData->id;
         $feed->title = (string) $feedData->title;
-        $feed->description = NULL;
-        $feed->language = NULL;
-        $feed->copyright = NULL;
-        $feed->webmaster = NULL;
+        $feed->description = '';
+        $feed->language = '';
+        $feed->copyright = '';
+        $feed->webmaster = '';
         $feed->updated = (string) $feedData->updated;
-        $feed->published = NULL;
+        $feed->published = '';
         $feed->siteUrl = (string) $feedData->link[0]['href'];
         $feed->feedUrl = (string) $feedData->link[1]['href'];
         $feed->items = $this->_getAtomItems($feedData->entry);
@@ -99,9 +87,8 @@ class RssParser {
      * @param string $url
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
      */
-    public function getRSS1FeedByUrl(string $url) : FeedObject {
+    public function getRSSFeedByUrl(string $url) : FeedObject {
         $feedData = simplexml_load_file($url);
-
         $feed = new FeedObject();
         $feed->id = NULL;
         $feed->title = (string) $feedData->channel->title;
@@ -109,11 +96,11 @@ class RssParser {
         $feed->language = (string) $feedData->channel->language;
         $feed->copyright = (string) $feedData->channel->copyright;
         $feed->webmaster = (string) $feedData->channel->webmaster;
-        $feed->updated = (string) $feedData->channel->updated;
+        $feed->updated = $feedData->channel->updated ? (string) $feedData->channel->updated : (string) $feedData->channel->lastBuildDate;
         $feed->published = (string) $feedData->channel->pubDate;
         $feed->siteUrl = (string) $feedData->channel->link;
         $feed->feedUrl = $url;
-        $feed->items = $this->_getRSS1Items($feedData->channel->item);
+        $feed->items = $this->_getRSSItems($feedData->channel->item);
 
         return $feed;
     }
@@ -123,14 +110,14 @@ class RssParser {
      * @param object $entries
      * @return ItemObject[]
      */
-    private function _getRSS1Items(object $entries) : array {
+    private function _getRSSItems(object $entries) : array {
         $items = [];
         foreach($entries as $entry) {
             $item = new ItemObject();
             $item->id = (string) $entry->id;
             $item->title = (string) $entry->title;
-            $item->description = (string) $entry->description;
-            $item->content = (string) $entry->description;
+            $item->description = $entry->description->p ? (string) $entry->description->p : (string) $entry->description;
+            $item->content = (string) $entry->content;
             $item->authorName = (string) $entry->author->name;
             $item->authorEmail = (string) $entry->author->email;
             $item->updated = (string) $entry->updated;
@@ -139,19 +126,11 @@ class RssParser {
             $item->imageUrl = (string) $entry->enclosure['url'];
             $item->imageType = (string) $entry->enclosure['type'];
             $item->imageTitle = (string) $entry->enclosure['title'];
+
             $items[] = $item;
         }
 
         return $items;
     }
-
-
-
-    public function getRSS2FeedByUrl(string $url) {
-        return 'build RSS 2.0 Feed';
-    }
-
-
-
 
 }
