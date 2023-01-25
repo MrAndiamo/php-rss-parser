@@ -1,0 +1,21 @@
+{
+    "name": "timvandendries/php-rss-parser",
+    "description": "PHP RSS parser",
+    "type": "composer-plugin",
+    "autoload": {
+        "psr-4": {
+            "Timvandendries\\PhpRssParser\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Tim van den Dries",
+            "email": "vamos1982@gmail.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {
+        "ext-curl": "*",
+        "ext-simplexml": "*"
+    }
+}
