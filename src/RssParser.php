@@ -41,16 +41,21 @@ class RssParser {
 
     /**
      * @param string $url
-     * @return FeedObject
+     * @return \Timvandendries\PhpRssParser\objects\FeedObject
      */
-    public function getAtomFeedByUrl(string $url) {
+    public function getAtomFeedByUrl(string $url) : FeedObject {
 
         $feedData = simplexml_load_file($url);
 
         $feed = new FeedObject();
         $feed->id = (string) $feedData->id;
         $feed->title = (string) $feedData->title;
+        $feed->description = NULL;
+        $feed->language = NULL;
+        $feed->copyright = NULL;
+        $feed->webmaster = NULL;
         $feed->updated = (string) $feedData->updated;
+        $feed->published = NULL;
         $feed->siteUrl = (string) $feedData->link[0]['href'];
         $feed->feedUrl = (string) $feedData->link[1]['href'];
         $feed->items = $this->_getAtomItems($feedData->entry);
@@ -85,9 +90,56 @@ class RssParser {
     }
 
 
-    public function getRSS1FeedByUrl(string $url) {
-        return 'build RSS 1.0 Feed';
+    /**
+     * @param string $url
+     * @return \Timvandendries\PhpRssParser\objects\FeedObject
+     */
+    public function getRSS1FeedByUrl(string $url) : FeedObject {
+        $feedData = simplexml_load_file($url);
+
+        $feed = new FeedObject();
+        $feed->id = NULL;
+        $feed->title = (string) $feedData->channel->title;
+        $feed->description = (string) $feedData->channel->description;
+        $feed->language = (string) $feedData->channel->language;
+        $feed->copyright = (string) $feedData->channel->copyright;
+        $feed->webmaster = (string) $feedData->channel->webmaster;
+        $feed->updated = (string) $feedData->channel->updated;
+        $feed->published = (string) $feedData->channel->pubDate;
+        $feed->siteUrl = (string) $feedData->channel->link;
+        $feed->feedUrl = $url;
+        $feed->items = $this->_getRSS1Items($feedData->channel->item);
+
+        return $feed;
     }
+
+
+    /**
+     * @param object $entries
+     * @return ItemObject[]
+     */
+    private function _getRSS1Items(object $entries) : array {
+        $items = [];
+        foreach($entries as $entry) {
+            $item = new ItemObject();
+            $item->id = (string) $entry->id;
+            $item->title = (string) $entry->title;
+            $item->description = (string) $entry->description;
+            $item->content = (string) $entry->description;
+            $item->authorName = (string) $entry->author->name;
+            $item->authorEmail = (string) $entry->author->email;
+            $item->updated = (string) $entry->updated;
+            $item->published = (string) $entry->pubDate;
+            $item->itemUrl = (string) $entry->guid;
+            $item->imageUrl = (string) $entry->enclosure['url'];
+            $item->imageType = (string) $entry->enclosure['type'];
+            $item->imageTitle = (string) $entry->enclosure['title'];
+            $items[] = $item;
+        }
+
+        return $items;
+    }
+
 
 
     public function getRSS2FeedByUrl(string $url) {

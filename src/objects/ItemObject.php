@@ -37,18 +37,18 @@ class ItemObject {
     ];
 
     protected array $_field_types = [
-        'id'            => ['type' => 'string', 'nullable' => FALSE],
-        'title'         => ['type' => 'string', 'nullable' => FALSE],
-        'description'   => ['type' => 'string', 'nullable' => FALSE],
-        'content'       => ['type' => 'string', 'nullable' => FALSE],
-        'authorName'    => ['type' => 'string', 'nullable' => FALSE],
-        'authorEmail'   => ['type' => 'string', 'nullable' => FALSE],
-        'updated'       => ['type' => 'string', 'nullable' => FALSE],
-        'published'     => ['type' => 'string', 'nullable' => FALSE],
-        'itemUrl'       => ['type' => 'string', 'nullable' => FALSE],
-        'imageUrl'      => ['type' => 'string', 'nullable' => FALSE],
-        'imageType'     => ['type' => 'string', 'nullable' => FALSE],
-        'imageTitle'    => ['type' => 'string', 'nullable' => FALSE]
+        'id'            => ['type' => 'string', 'nullable' => TRUE],
+        'title'         => ['type' => 'string', 'nullable' => TRUE],
+        'description'   => ['type' => 'string', 'nullable' => TRUE],
+        'content'       => ['type' => 'string', 'nullable' => TRUE],
+        'authorName'    => ['type' => 'string', 'nullable' => TRUE],
+        'authorEmail'   => ['type' => 'string', 'nullable' => TRUE],
+        'updated'       => ['type' => 'string', 'nullable' => TRUE],
+        'published'     => ['type' => 'string', 'nullable' => TRUE],
+        'itemUrl'       => ['type' => 'string', 'nullable' => TRUE],
+        'imageUrl'      => ['type' => 'string', 'nullable' => TRUE],
+        'imageType'     => ['type' => 'string', 'nullable' => TRUE],
+        'imageTitle'    => ['type' => 'string', 'nullable' => TRUE]
     ];
 
 }
