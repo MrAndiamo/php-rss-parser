@@ -15,17 +15,17 @@ class RssParser {
      * @param string $url
      * @return FeedObject
      */
-    public function getFeed(string $url){
+    public static function getFeed(string $url){
         $cUrl = curl_init($url);
         curl_setopt($cUrl, CURLOPT_RETURNTRANSFER, true);
         $data = curl_exec($cUrl);
         $data =  preg_replace('/^.+\n/', '', $data);
         if(substr(str_replace(array("\r", "\n"), '', $data), 0, 42) == self::ATOM_RSS_PATTERN) {
             echo 'Atom RSS';
-            $feed = $this->getAtomFeedByUrl($url);
+            $feed = self::getAtomFeedByUrl($url);
         } else {
             echo 'RSS 2.0';
-            $feed = $this->getRSSFeedByUrl($url);
+            $feed = self::getRSSFeedByUrl($url);
         }
 
         return $feed;
@@ -36,7 +36,7 @@ class RssParser {
      * @param string $url
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
      */
-    public function getAtomFeedByUrl(string $url) : FeedObject {
+    public static function getAtomFeedByUrl(string $url) : FeedObject {
 
         $feedData = simplexml_load_file($url);
 
@@ -51,7 +51,7 @@ class RssParser {
         $feed->published = '';
         $feed->siteUrl = (string) $feedData->link[0]['href'];
         $feed->feedUrl = (string) $feedData->link[1]['href'];
-        $feed->items = $this->_getAtomItems($feedData->entry);
+        $feed->items = self::_getAtomItems($feedData->entry);
 
         return $feed;
 
@@ -61,7 +61,7 @@ class RssParser {
      * @param object $entries
      * @return ItemObject[]
      */
-    private function _getAtomItems(object $entries) : array {
+    private static function _getAtomItems(object $entries) : array {
         $items = [];
         foreach($entries as $entry) {
             $item = new ItemObject();
@@ -87,7 +87,7 @@ class RssParser {
      * @param string $url
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
      */
-    public function getRSSFeedByUrl(string $url) : FeedObject {
+    public static function getRSSFeedByUrl(string $url) : FeedObject {
         $feedData = simplexml_load_file($url);
         $feed = new FeedObject();
         $feed->id = NULL;
@@ -100,7 +100,7 @@ class RssParser {
         $feed->published = (string) $feedData->channel->pubDate;
         $feed->siteUrl = (string) $feedData->channel->link;
         $feed->feedUrl = $url;
-        $feed->items = $this->_getRSSItems($feedData->channel->item);
+        $feed->items = self::_getRSSItems($feedData->channel->item);
 
         return $feed;
     }
@@ -110,7 +110,7 @@ class RssParser {
      * @param object $entries
      * @return ItemObject[]
      */
-    private function _getRSSItems(object $entries) : array {
+    private static function _getRSSItems(object $entries) : array {
         $items = [];
         foreach($entries as $entry) {
             $item = new ItemObject();
