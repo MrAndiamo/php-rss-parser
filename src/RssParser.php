@@ -21,10 +21,8 @@ class RssParser {
         $data = curl_exec($cUrl);
         $data =  preg_replace('/^.+\n/', '', $data);
         if(substr(str_replace(array("\r", "\n"), '', $data), 0, 42) == self::ATOM_RSS_PATTERN) {
-            echo 'Atom RSS';
             $feed = self::getAtomFeedByUrl($url);
         } else {
-            echo 'RSS 2.0';
             $feed = self::getRSSFeedByUrl($url);
         }
 
