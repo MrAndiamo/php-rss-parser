@@ -15,7 +15,7 @@ class RssParser {
      * @param string $url
      * @return FeedObject
      */
-    public static function getFeed(string $url){
+    public static function getFeed(string $url) : FeedObject {
         $cUrl = curl_init($url);
         curl_setopt($cUrl, CURLOPT_RETURNTRANSFER, true);
         $data = curl_exec($cUrl);
@@ -71,10 +71,10 @@ class RssParser {
             $item->authorEmail = (string) $entry->author->email;
             $item->updated = (string) $entry->updated;
             $item->published = (string) $entry->published;
-            $item->itemUrl = (string) $entry->link[0]['href'];
-            $item->imageUrl = (string) $entry->link[1]['href'];
-            $item->imageType = (string) $entry->link[1]['type'];
-            $item->imageTitle = (string) $entry->link[1]['title'];
+            $item->itemUrl = $entry->link[0] ? (string) $entry->link[0]['href'] : NULL;
+            $item->imageUrl = $entry->link[2] ? (string) $entry->link[1]['href'] : NULL;
+            $item->imageType = $entry->link1[1] ? (string) $entry->link[1]['type'] : NULL;
+            $item->imageTitle = $entry->link[2] ? (string) $entry->link[1]['title'] : NULL;
             $items[] = $item;
         }
         return $items;
