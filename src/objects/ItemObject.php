@@ -21,18 +21,18 @@ namespace Timvandendries\PhpRssParser\objects;
  */
 class ItemObject {
 
-    private ?string $id = NULL;
-    private ?string $title = NULL;
-    private ?string $description = NULL;
-    private ?string $content = NULL;
-    private ?string $authorName = NULL;
-    private ?string $authorEmail = NULL;
-    private ?string $updated = NULL;
-    private ?string $published = NULL;
-    private ?string $itemUrl = NULL;
-    private ?string $imageUrl = NULL;
-    private ?string $imageType = NULL;
-    private ?string $imageTitle = NULL;
+    public ?string $id = NULL;
+    public ?string $title = NULL;
+    public ?string $description = NULL;
+    public ?string $content = NULL;
+    public ?string $authorName = NULL;
+    public ?string $authorEmail = NULL;
+    public ?string $updated = NULL;
+    public ?string $published = NULL;
+    public ?string $itemUrl = NULL;
+    public ?string $imageUrl = NULL;
+    public ?string $imageType = NULL;
+    public ?string $imageTitle = NULL;
 
     public function __set(string $name, $value): void {
         $this->{$name} = $value;
