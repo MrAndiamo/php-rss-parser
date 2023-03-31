@@ -29,7 +29,6 @@ class RssParser {
         return $feed;
     }
 
-
     /**
      * @param string $url
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
@@ -52,7 +51,6 @@ class RssParser {
         $feed->items = self::_getAtomItems($feedData->entry);
 
         return $feed;
-
     }
 
     /**
