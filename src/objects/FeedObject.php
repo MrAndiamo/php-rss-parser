@@ -19,19 +19,7 @@ use Timvandendries\PhpRssParser\objects\ItemObject;
  * @property null|string $feedUrl
  * @property null|ItemObject[] $items
  */
-class FeedObject {
-
-    public ?string $id = NULL;
-    public ?string $title = NULL;
-    public ?string $description = NULL;
-    public ?string $language = NULL;
-    public ?string $copyright = NULL;
-    public ?string $webmaster = NULL;
-    public ?string $updated = NULL;
-    public ?string $published = NULL;
-    public ?string $siteUrl = NULL;
-    public ?string $feedUrl = NULL;
-    public ?array $items = NULL;
+class FeedObject extends \stdClass {
 
     public function __set(string $name, $value): void {
         $this->{$name} = $value;

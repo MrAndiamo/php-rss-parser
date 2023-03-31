@@ -19,20 +19,7 @@ namespace Timvandendries\PhpRssParser\objects;
  * @property string $imageTitle
  *
  */
-class ItemObject {
-
-    public ?string $id = NULL;
-    public ?string $title = NULL;
-    public ?string $description = NULL;
-    public ?string $content = NULL;
-    public ?string $authorName = NULL;
-    public ?string $authorEmail = NULL;
-    public ?string $updated = NULL;
-    public ?string $published = NULL;
-    public ?string $itemUrl = NULL;
-    public ?string $imageUrl = NULL;
-    public ?string $imageType = NULL;
-    public ?string $imageTitle = NULL;
+class ItemObject extends \stdClass {
 
     public function __set(string $name, $value): void {
         $this->{$name} = $value;
