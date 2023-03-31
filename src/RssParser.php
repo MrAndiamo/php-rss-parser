@@ -40,12 +40,12 @@ class RssParser {
         $feed = new FeedObject();
         $feed->id = (string) $feedData->id;
         $feed->title = (string) $feedData->title;
-        $feed->description = '';
-        $feed->language = '';
-        $feed->copyright = '';
-        $feed->webmaster = '';
+        $feed->description = NULL;
+        $feed->language = NULL;
+        $feed->copyright = NULL;
+        $feed->webmaster = NULL;
         $feed->updated = (string) $feedData->updated;
-        $feed->published = '';
+        $feed->published = NULL;
         $feed->siteUrl = (string) $feedData->link[0]['href'];
         $feed->feedUrl = (string) $feedData->link[1]['href'];
         $feed->items = self::_getAtomItems($feedData->entry);
