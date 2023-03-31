@@ -31,7 +31,7 @@ class FeedObject {
     private ?string $published = NULL;
     private ?string $siteUrl = NULL;
     private ?string $feedUrl = NULL;
-    private ?ItemObject $items = NULL;
+    private ?array $items = NULL;
 
     public function __set(string $name, $value): void {
         $this->{$name} = $value;
