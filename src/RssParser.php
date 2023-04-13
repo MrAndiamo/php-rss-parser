@@ -84,7 +84,12 @@ class RssParser {
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
      */
     public static function getRSSFeedByUrl(string $url) : FeedObject {
-        $feedData = simplexml_load_file($url);
+        try {
+            $feedData = simplexml_load_file($url);
+        } catch (\Exception $exception) {
+            return new FeedObject();
+        }
+
         $feed = new FeedObject();
         $feed->id = NULL;
         $feed->title = (string) $feedData->channel->title;
