@@ -1,13 +1,14 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace Timvandendries\PhpRssParser;
 
 use Timvandendries\PhpRssParser\objects\FeedObject;
 use Timvandendries\PhpRssParser\objects\ItemObject;
 
-class RssParser {
+class RssParser
+{
 
     public const ATOM_RSS_PATTERN = '<feed xmlns="http://www.w3.org/2005/Atom">';
 
@@ -15,17 +16,21 @@ class RssParser {
      * @param string $url
      * @return FeedObject
      */
-    public static function getFeed(string $url) : FeedObject {
+    public static function getFeed(string $url): FeedObject
+    {
         $cUrl = curl_init($url);
         curl_setopt($cUrl, CURLOPT_RETURNTRANSFER, true);
         $data = curl_exec($cUrl);
-        $data =  preg_replace('/^.+\n/', '', $data);
-        if(substr(str_replace(array("\r", "\n"), '', $data), 0, 42) == self::ATOM_RSS_PATTERN) {
-            $feed = self::getAtomFeedByUrl($url);
+        if (!is_bool($data)) {
+            $data =  preg_replace('/^.+\n/', '', $data);
+            if (substr(str_replace(array("\r", "\n"), '', $data), 0, 42) == self::ATOM_RSS_PATTERN) {
+                $feed = self::getAtomFeedByUrl($url);
+            } else {
+                $feed = self::getRSSFeedByUrl($url);
+            }
         } else {
-            $feed = self::getRSSFeedByUrl($url);
+            $feed = new FeedObject;
         }
-
         return $feed;
     }
 
@@ -33,7 +38,8 @@ class RssParser {
      * @param string $url
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
      */
-    public static function getAtomFeedByUrl(string $url) : FeedObject {
+    public static function getAtomFeedByUrl(string $url): FeedObject
+    {
 
         $feedData = simplexml_load_file($url);
 
@@ -57,9 +63,10 @@ class RssParser {
      * @param object $entries
      * @return ItemObject[]
      */
-    private static function _getAtomItems(object $entries) : array {
+    private static function _getAtomItems(object $entries): array
+    {
         $items = [];
-        foreach($entries as $entry) {
+        foreach ($entries as $entry) {
             $item = new ItemObject();
             $item->id = (string) $entry->id;
             $item->title = (string) $entry->title;
@@ -83,7 +90,8 @@ class RssParser {
      * @param string $url
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
      */
-    public static function getRSSFeedByUrl(string $url) : FeedObject {
+    public static function getRSSFeedByUrl(string $url): FeedObject
+    {
         $feedData = @simplexml_load_file($url);
         if ($feedData === false) {
             return new FeedObject();
@@ -110,9 +118,10 @@ class RssParser {
      * @param object $entries
      * @return ItemObject[]
      */
-    private static function _getRSSItems(object $entries) : array {
+    private static function _getRSSItems(object $entries): array
+    {
         $items = [];
-        foreach($entries as $entry) {
+        foreach ($entries as $entry) {
             $item = new ItemObject();
             $item->id = (string) $entry->id;
             $item->title = (string) $entry->title;
@@ -132,5 +141,4 @@ class RssParser {
 
         return $items;
     }
-
 }
