@@ -21,7 +21,7 @@ class RssParser
         $cUrl = curl_init($url);
         curl_setopt($cUrl, CURLOPT_RETURNTRANSFER, true);
         $data = curl_exec($cUrl);
-        if (!is_bool($data)) {
+        if ($data) {
             $data =  preg_replace('/^.+\n/', '', $data);
             if (substr(str_replace(array("\r", "\n"), '', $data), 0, 42) == self::ATOM_RSS_PATTERN) {
                 $feed = self::getAtomFeedByUrl($url);
