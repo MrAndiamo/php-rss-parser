@@ -52,7 +52,7 @@ class RssParser
         $feed->webmaster = NULL;
         $feed->updated = (string) $feedData->updated;
         $feed->published = NULL;
-        $feed->siteUrl = (string) $feedData->link[0]['href'];
+        $feed->siteUrl = is_string($feedData->link) ? $feedData->link : (string) $feedData->link[0]['href'];
         $feed->feedUrl = (string) $feedData->link[1]['href'];
         $feed->items = self::_getAtomItems($feedData->entry);
 
