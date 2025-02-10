@@ -52,7 +52,7 @@ class RssParser
         $feed->webmaster = NULL;
         $feed->updated = (string) $feedData->updated;
         $feed->published = NULL;
-        $feed->siteUrl = is_string($feedData->link) ? $feedData->link : (string) $feedData->link[0]['href'];
+        $feed->siteUrl = (string) $feedData->link[0]['href'];
         $feed->feedUrl = (string) $feedData->link[1]['href'];
         $feed->items = self::_getAtomItems($feedData->entry);
 
@@ -131,7 +131,7 @@ class RssParser
             $item->authorEmail = (string) $entry->author->email;
             $item->updated = (string) $entry->updated;
             $item->published = (string) $entry->pubDate;
-            $item->itemUrl = (string) $entry->guid;
+            $item->itemUrl = $feedData->link ?? (string) $entry->guid;
             $item->imageUrl = (string) $entry->enclosure['url'];
             $item->imageType = (string) $entry->enclosure['type'];
             $item->imageTitle = (string) $entry->enclosure['title'];
