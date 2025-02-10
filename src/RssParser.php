@@ -131,7 +131,7 @@ class RssParser
             $item->authorEmail = (string) $entry->author->email;
             $item->updated = (string) $entry->updated;
             $item->published = (string) $entry->pubDate;
-            $item->itemUrl = $feedData->link ?? (string) $entry->guid;
+            $item->itemUrl = (string) $entry->link[0] ?? (string) $entry->guid;
             $item->imageUrl = (string) $entry->enclosure['url'];
             $item->imageType = (string) $entry->enclosure['type'];
             $item->imageTitle = (string) $entry->enclosure['title'];
