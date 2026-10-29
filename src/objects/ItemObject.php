@@ -18,6 +18,10 @@ namespace Timvandendries\PhpRssParser\objects;
  * @property null|string $imageType NULL for Atom items without an image enclosure
  * @property null|string $imageTitle NULL for Atom items without an image enclosure
  *
+ * All values come from the feed and are untrusted. $description and $content can hold HTML that is
+ * returned as the feed has it, including scripts and event handlers: run them through an HTML sanitizer
+ * such as HTML Purifier before putting them on a page. Atom titles are plain text; escape them, like
+ * every other text field, with htmlspecialchars() before output.
  */
 class ItemObject extends \stdClass {
 

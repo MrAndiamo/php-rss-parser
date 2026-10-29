@@ -18,5 +18,8 @@
         "ext-curl": "*",
         "ext-dom": "*",
         "ext-simplexml": "*"
+    },
+    "suggest": {
+        "ext-intl": "Needed to fetch feeds from internationalized domain names, such as bücher.de"
     }
 }

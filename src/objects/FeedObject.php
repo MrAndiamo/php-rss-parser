@@ -19,6 +19,9 @@ use Timvandendries\PhpRssParser\objects\ItemObject;
  * @property null|string $feedUrl
  * @property null|ItemObject[] $items
  * @property null|string $error
+ *
+ * All values except $error come from the feed and are untrusted plain text (Atom titles too):
+ * escape them with htmlspecialchars() before putting them on a page.
  */
 class FeedObject extends \stdClass {
 
