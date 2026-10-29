@@ -57,7 +57,7 @@ class FeedObject extends \stdClass {
         'updated'       => 'updated',
         'published'     => 'published',
         'siteUrl'       => 'siteUrl',
-        'feedUrl'       => 'imageUrl',
+        'feedUrl'       => 'feedUrl',
         'items'         => 'items',
         'error'         => 'error',
     ];
