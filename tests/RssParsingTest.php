@@ -58,8 +58,9 @@ final class RssParsingTest extends TestCase
 
         self::assertSame('RSS 1.0 feed', $feed->title);
         self::assertSame('https://example.org/', $feed->siteUrl);
-        self::assertSame('RDF item', self::items($feed)[0]->title);
-        self::assertSame('https://example.org/a', self::items($feed)[0]->itemUrl);
+        $item = self::items($feed)[0];
+        self::assertSame('RDF item', $item->title);
+        self::assertSame('https://example.org/a', $item->itemUrl);
     }
 
     public function testBomAndLeadingWhitespaceAreSkipped(): void

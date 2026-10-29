@@ -355,7 +355,7 @@ class RssParser
             $addresses = gethostbynamel($host) ?: [];
             if ($addresses === []) {
                 foreach (@dns_get_record($host, DNS_AAAA) ?: [] as $record) {
-                    if (isset($record['ipv6']) && is_string($record['ipv6'])) {
+                    if (is_string($record['ipv6'] ?? null)) {
                         $addresses[] = $record['ipv6'];
                     }
                 }
@@ -418,11 +418,16 @@ class RssParser
      */
     private static function _curlInfo(): array
     {
-        $info = curl_version();
-        if ($info === false || !is_string($info['version'] ?? null) || !is_int($info['features'] ?? null)) {
-            throw new \RuntimeException('Could not read the libcurl version');
+        /** @var array{version: string, features: int}|null $curlInfo the values can't change while PHP runs */
+        static $curlInfo = null;
+        if ($curlInfo === null) {
+            $info = curl_version();
+            if ($info === false || !is_string($info['version'] ?? null) || !is_int($info['features'] ?? null)) {
+                throw new \RuntimeException('Could not read the libcurl version');
+            }
+            $curlInfo = ['version' => $info['version'], 'features' => $info['features']];
         }
-        return ['version' => $info['version'], 'features' => $info['features']];
+        return $curlInfo;
     }
 
     /**
@@ -750,10 +755,7 @@ class RssParser
         $attributes = $element->attributes();
         $type = (string) $attributes['type'];
         $dom = dom_import_simplexml($element);
-        // Text constructs are elements; dom_import_simplexml() only returns a DOMAttr for attributes.
-        if (!$dom instanceof \DOMElement) {
-            return [null, (string) $element, false];
-        }
+        assert($dom instanceof \DOMElement, 'Text constructs are elements; dom_import_simplexml() only returns a DOMAttr for attributes');
 
         if ($type === 'xhtml') {
             foreach ($dom->childNodes as $child) {
@@ -781,6 +783,19 @@ class RssParser
         }
 
         return [null, (string) $element, $type === 'html'];
+    }
+
+    /**
+     * @param \DOMElement $element
+     * @return string the element name without namespace prefix: "p" for <h:p>
+     */
+    private static function _localName(\DOMElement $element): string
+    {
+        if ($element->localName !== null) {
+            return $element->localName;
+        }
+        $colon = strrpos($element->nodeName, ':');
+        return $colon === false ? $element->nodeName : substr($element->nodeName, $colon + 1);
     }
 
     /**
@@ -869,7 +884,7 @@ class RssParser
             return '';
         }
 
-        $name = strtolower($node->localName ?? $node->nodeName);
+        $name = strtolower(self::_localName($node));
         if ($name === 'script' || $name === 'style') {
             return '';
         }
@@ -936,7 +951,7 @@ class RssParser
     private static function _importAsHtml(\DOMDocument $doc, \DOMNode $node): ?\DOMNode
     {
         if ($node instanceof \DOMElement) {
-            $element = $doc->createElement($node->localName ?? $node->nodeName);
+            $element = $doc->createElement(self::_localName($node));
             foreach ($node->attributes as $attribute) {
                 $element->setAttribute($attribute->nodeName, $attribute->value);
             }

@@ -30,7 +30,12 @@ class ItemObject extends \stdClass
         $this->{$name} = $value;
     }
 
-    public function __get(string $name): mixed
+    /**
+     * No native return type: adding one would break subclasses that override __get() without it.
+     *
+     * @return mixed
+     */
+    public function __get(string $name)
     {
         return $this->{$name};
     }

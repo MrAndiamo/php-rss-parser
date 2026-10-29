@@ -100,9 +100,10 @@ final class SsrfTest extends TestCase
     {
         $pin = self::callPrivate('_pinList', ['93.184.216.34', '2606:2800:220:1::1', '93.184.216.35']);
 
-        $curl = curl_version();
-        self::assertIsArray($curl);
-        $version = $curl['version'] ?? null;
+        // The same helper _pinList() uses; these asserts only give PHPStan the types of the reflection result.
+        $curlInfo = self::callPrivate('_curlInfo');
+        self::assertIsArray($curlInfo);
+        $version = $curlInfo['version'] ?? null;
         self::assertIsString($version);
 
         if (version_compare($version, '7.59.0', '>=')) {
