@@ -10,8 +10,6 @@ use Timvandendries\PhpRssParser\RssParser;
 /**
  * Tests that need internet access. Excluded by default; run them with `composer test-network`.
  * example.com serves an HTML page, so a successful fetch ends in an XML parse error.
- *
- * @group network
  */
 #[Group('network')]
 final class NetworkTest extends \PHPUnit\Framework\TestCase

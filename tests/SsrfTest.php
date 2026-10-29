@@ -37,9 +37,6 @@ final class SsrfTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider blockedUrls
-     */
     #[DataProvider('blockedUrls')]
     public function testPrivateAndReservedAddressesAreRefused(string $url): void
     {
@@ -68,9 +65,6 @@ final class SsrfTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider addresses
-     */
     #[DataProvider('addresses')]
     public function testAddressRangeEdges(string $address, bool $blocked): void
     {

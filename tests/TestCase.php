@@ -51,11 +51,6 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
      */
     protected static function callPrivate(string $method, ...$arguments)
     {
-        $reflection = new \ReflectionMethod(RssParser::class, $method);
-        // Needed before PHP 8.1, deprecated since PHP 8.5.
-        if (PHP_VERSION_ID < 80100) {
-            $reflection->setAccessible(true);
-        }
-        return $reflection->invoke(NULL, ...$arguments);
+        return (new \ReflectionMethod(RssParser::class, $method))->invoke(NULL, ...$arguments);
     }
 }

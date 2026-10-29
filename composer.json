@@ -21,13 +21,13 @@
     "minimum-stability": "dev",
     "prefer-stable": true,
     "require": {
-        "php": ">=7.4",
+        "php": "~8.4.27 || ^8.5.12",
         "ext-curl": "*",
         "ext-dom": "*",
         "ext-simplexml": "*"
     },
     "require-dev": {
-        "phpunit/phpunit": "^9.6 || ^10.5 || ^11.5"
+        "phpunit/phpunit": "^13"
     },
     "suggest": {
         "ext-intl": "Needed to fetch feeds from internationalized domain names, such as bücher.de"

@@ -36,9 +36,6 @@ final class UrlValidationTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider refusedUrls
-     */
     #[DataProvider('refusedUrls')]
     public function testRefusedUrls(string $url, string $expectedError): void
     {
@@ -71,7 +68,6 @@ final class UrlValidationTest extends TestCase
     }
 
     /**
-     * @dataProvider preparedUrls
      * @param array<string, mixed> $expected
      */
     #[DataProvider('preparedUrls')]
