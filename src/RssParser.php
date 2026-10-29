@@ -19,19 +19,67 @@ class RssParser
     public static function getFeed(string $url): FeedObject
     {
         $cUrl = curl_init($url);
-        curl_setopt($cUrl, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt_array($cUrl, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 5,
+        ]);
         $data = curl_exec($cUrl);
-        if ($data) {
-            $data =  preg_replace('/^.+\n/', '', $data);
-            if (substr(str_replace(array("\r", "\n"), '', $data), 0, 42) == self::ATOM_RSS_PATTERN) {
-                $feed = self::getAtomFeedByUrl($url);
-            } else {
-                $feed = self::getRSSFeedByUrl($url);
-            }
+        $status = curl_getinfo($cUrl, CURLINFO_RESPONSE_CODE);
+
+        if ($data === false) {
+            return self::_errorFeed("cURL error for {$url}: " . curl_error($cUrl));
+        }
+        if ($status >= 400) {
+            return self::_errorFeed("HTTP {$status} for {$url}");
+        }
+        if ($data === '') {
+            return self::_errorFeed("Empty response (HTTP {$status}) for {$url}");
+        }
+
+        $data =  preg_replace('/^.+\n/', '', $data);
+        if (substr(str_replace(array("\r", "\n"), '', $data), 0, 42) == self::ATOM_RSS_PATTERN) {
+            $feed = self::getAtomFeedByUrl($url);
         } else {
-            $feed = new FeedObject;
+            $feed = self::getRSSFeedByUrl($url);
         }
         return $feed;
+    }
+
+    /**
+     * @param string $message
+     * @return FeedObject
+     */
+    private static function _errorFeed(string $message): FeedObject
+    {
+        $feed = new FeedObject();
+        $feed->error = $message;
+        return $feed;
+    }
+
+    /**
+     * @param string $url
+     * @param string|null $error set to the reason when loading fails
+     * @return \SimpleXMLElement|false
+     */
+    private static function _loadXml(string $url, ?string &$error = NULL): \SimpleXMLElement|false
+    {
+        $useInternalErrors = libxml_use_internal_errors(true);
+        libxml_clear_errors();
+
+        $feedData = @simplexml_load_file($url);
+        if ($feedData === false) {
+            $xmlError = libxml_get_errors()[0] ?? NULL;
+            $reason = $xmlError
+                ? trim($xmlError->message) . " (line {$xmlError->line})"
+                : (error_get_last()['message'] ?? 'unknown error');
+            $error = "Could not parse XML from {$url}: {$reason}";
+        }
+
+        libxml_clear_errors();
+        libxml_use_internal_errors($useInternalErrors);
+
+        return $feedData;
     }
 
     /**
@@ -40,8 +88,10 @@ class RssParser
      */
     public static function getAtomFeedByUrl(string $url): FeedObject
     {
-
-        $feedData = simplexml_load_file($url);
+        $feedData = self::_loadXml($url, $error);
+        if ($feedData === false) {
+            return self::_errorFeed($error);
+        }
 
         $feed = new FeedObject();
         $feed->id = (string) $feedData->id;
@@ -92,9 +142,9 @@ class RssParser
      */
     public static function getRSSFeedByUrl(string $url): FeedObject
     {
-        $feedData = @simplexml_load_file($url);
+        $feedData = self::_loadXml($url, $error);
         if ($feedData === false) {
-            return new FeedObject();
+            return self::_errorFeed($error);
         }
 
         $feed = new FeedObject();

@@ -18,6 +18,7 @@ use Timvandendries\PhpRssParser\objects\ItemObject;
  * @property null|string $siteUrl
  * @property null|string $feedUrl
  * @property null|ItemObject[] $items
+ * @property null|string $error
  */
 class FeedObject extends \stdClass {
 
@@ -32,6 +33,7 @@ class FeedObject extends \stdClass {
     public ?string $siteUrl = NULL;
     public ?string $feedUrl = NULL;
     public ?array $items = NULL;
+    public ?string $error = NULL;
 
     public function __set(string $name, $value): void {
         $this->{$name} = $value;
@@ -53,6 +55,7 @@ class FeedObject extends \stdClass {
         'siteUrl'       => 'siteUrl',
         'feedUrl'       => 'imageUrl',
         'items'         => 'items',
+        'error'         => 'error',
     ];
 
     protected array $_field_types = [
@@ -67,5 +70,6 @@ class FeedObject extends \stdClass {
         'siteUrl'       => ['type' => 'string', 'nullable' => TRUE],
         'feedUrl'       => ['type' => 'string', 'nullable' => TRUE],
         'items'         => ['type' => [ItemObject::class], 'nullable' => TRUE],
+        'error'         => ['type' => 'string', 'nullable' => TRUE],
     ];
 }
