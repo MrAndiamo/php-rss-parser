@@ -40,7 +40,7 @@ class ItemObject extends \stdClass {
         'published'     => 'published',
         'itemUrl'       => 'itemUrl',
         'imageUrl'      => 'imageUrl',
-        'imageType'     => 'imageUrl',
+        'imageType'     => 'imageType',
         'imageTitle'    => 'imageTitle'
     ];
 
