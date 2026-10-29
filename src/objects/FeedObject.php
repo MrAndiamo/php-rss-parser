@@ -35,6 +35,10 @@ class FeedObject extends \stdClass {
     public ?array $items = NULL;
     public ?string $error = NULL;
 
+    public function hasError(): bool {
+        return $this->error !== NULL;
+    }
+
     public function __set(string $name, $value): void {
         $this->{$name} = $value;
     }

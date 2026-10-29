@@ -10,7 +10,17 @@ use Timvandendries\PhpRssParser\objects\ItemObject;
 class RssParser
 {
 
-    public const ATOM_RSS_PATTERN = '<feed xmlns="http://www.w3.org/2005/Atom">';
+    public const ATOM_NAMESPACE = 'http://www.w3.org/2005/Atom';
+
+    public const CONNECT_TIMEOUT = 10;
+    public const TIMEOUT = 30;
+    public const USER_AGENT = 'Mozilla/5.0 (compatible; php-rss-parser)';
+
+    /** Query parameters whose values are hidden in error messages. */
+    private const SECRET_PARAMS = [
+        'token', 'access_token', 'auth', 'key', 'apikey', 'api_key',
+        'secret', 'password', 'pass', 'signature', 'sig',
+    ];
 
     /**
      * @param string $url
@@ -18,68 +28,9 @@ class RssParser
      */
     public static function getFeed(string $url): FeedObject
     {
-        $cUrl = curl_init($url);
-        curl_setopt_array($cUrl, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS      => 5,
-        ]);
-        $data = curl_exec($cUrl);
-        $status = curl_getinfo($cUrl, CURLINFO_RESPONSE_CODE);
-
-        if ($data === false) {
-            return self::_errorFeed("cURL error for {$url}: " . curl_error($cUrl));
-        }
-        if ($status >= 400) {
-            return self::_errorFeed("HTTP {$status} for {$url}");
-        }
-        if ($data === '') {
-            return self::_errorFeed("Empty response (HTTP {$status}) for {$url}");
-        }
-
-        $data =  preg_replace('/^.+\n/', '', $data);
-        if (substr(str_replace(array("\r", "\n"), '', $data), 0, 42) == self::ATOM_RSS_PATTERN) {
-            $feed = self::getAtomFeedByUrl($url);
-        } else {
-            $feed = self::getRSSFeedByUrl($url);
-        }
-        return $feed;
-    }
-
-    /**
-     * @param string $message
-     * @return FeedObject
-     */
-    private static function _errorFeed(string $message): FeedObject
-    {
-        $feed = new FeedObject();
-        $feed->error = $message;
-        return $feed;
-    }
-
-    /**
-     * @param string $url
-     * @param string|null $error set to the reason when loading fails
-     * @return \SimpleXMLElement|false
-     */
-    private static function _loadXml(string $url, ?string &$error = NULL): \SimpleXMLElement|false
-    {
-        $useInternalErrors = libxml_use_internal_errors(true);
-        libxml_clear_errors();
-
-        $feedData = @simplexml_load_file($url);
-        if ($feedData === false) {
-            $xmlError = libxml_get_errors()[0] ?? NULL;
-            $reason = $xmlError
-                ? trim($xmlError->message) . " (line {$xmlError->line})"
-                : (error_get_last()['message'] ?? 'unknown error');
-            $error = "Could not parse XML from {$url}: {$reason}";
-        }
-
-        libxml_clear_errors();
-        libxml_use_internal_errors($useInternalErrors);
-
-        return $feedData;
+        return self::_parse($url, fn(\SimpleXMLElement $xml) => self::_isAtom($xml)
+            ? self::_buildAtomFeed($xml, $url)
+            : self::_buildRSSFeed($xml, $url));
     }
 
     /**
@@ -88,53 +39,8 @@ class RssParser
      */
     public static function getAtomFeedByUrl(string $url): FeedObject
     {
-        $feedData = self::_loadXml($url, $error);
-        if ($feedData === false) {
-            return self::_errorFeed($error);
-        }
-
-        $feed = new FeedObject();
-        $feed->id = (string) $feedData->id;
-        $feed->title = (string) $feedData->title;
-        $feed->description = NULL;
-        $feed->language = NULL;
-        $feed->copyright = NULL;
-        $feed->webmaster = NULL;
-        $feed->updated = (string) $feedData->updated;
-        $feed->published = NULL;
-        $feed->siteUrl = (string) $feedData->link[0]['href'];
-        $feed->feedUrl = (string) $feedData->link[1]['href'];
-        $feed->items = self::_getAtomItems($feedData->entry);
-
-        return $feed;
+        return self::_parse($url, fn(\SimpleXMLElement $xml) => self::_buildAtomFeed($xml, $url));
     }
-
-    /**
-     * @param object $entries
-     * @return ItemObject[]
-     */
-    private static function _getAtomItems(object $entries): array
-    {
-        $items = [];
-        foreach ($entries as $entry) {
-            $item = new ItemObject();
-            $item->id = (string) $entry->id;
-            $item->title = (string) $entry->title;
-            $item->description = (string) $entry->summary;
-            $item->content = (string) $entry->content;
-            $item->authorName = (string) $entry->author->name;
-            $item->authorEmail = (string) $entry->author->email;
-            $item->updated = (string) $entry->updated;
-            $item->published = (string) $entry->published;
-            $item->itemUrl = $entry->link[0] ? (string) $entry->link[0]['href'] : NULL;
-            $item->imageUrl = $entry->link[2] ? (string) $entry->link[1]['href'] : NULL;
-            $item->imageType = $entry->link1[1] ? (string) $entry->link[1]['type'] : NULL;
-            $item->imageTitle = $entry->link[2] ? (string) $entry->link[1]['title'] : NULL;
-            $items[] = $item;
-        }
-        return $items;
-    }
-
 
     /**
      * @param string $url
@@ -142,11 +48,240 @@ class RssParser
      */
     public static function getRSSFeedByUrl(string $url): FeedObject
     {
-        $feedData = self::_loadXml($url, $error);
-        if ($feedData === false) {
-            return self::_errorFeed($error);
+        return self::_parse($url, fn(\SimpleXMLElement $xml) => self::_buildRSSFeed($xml, $url));
+    }
+
+    /**
+     * Fetches and parses the feed, turning any failure into a FeedObject with an error.
+     *
+     * @param string $url
+     * @param callable $builder receives the parsed \SimpleXMLElement and returns a FeedObject
+     * @return FeedObject
+     */
+    private static function _parse(string $url, callable $builder): FeedObject
+    {
+        try {
+            return $builder(self::_loadXml($url));
+        } catch (\RuntimeException $e) {
+            $feed = new FeedObject();
+            $feed->error = $e->getMessage();
+            return $feed;
+        }
+    }
+
+    /**
+     * @param \SimpleXMLElement $xml
+     * @return bool
+     */
+    private static function _isAtom(\SimpleXMLElement $xml): bool
+    {
+        return $xml->getName() === 'feed' && in_array(self::ATOM_NAMESPACE, $xml->getNamespaces(), true);
+    }
+
+    /**
+     * Hides credentials and secret query values so error messages don't leak them.
+     *
+     * @param string $url
+     * @return string
+     */
+    private static function _safeUrl(string $url): string
+    {
+        $parts = parse_url($url);
+        if ($parts === false || !isset($parts['host'])) {
+            return '[invalid url]';
         }
 
+        $query = '';
+        if (isset($parts['query'])) {
+            $pairs = [];
+            foreach (explode('&', $parts['query']) as $pair) {
+                $name = explode('=', $pair, 2)[0];
+                $pairs[] = in_array(strtolower(urldecode($name)), self::SECRET_PARAMS, true)
+                    ? $name . '=REDACTED'
+                    : $pair;
+            }
+            $query = '?' . implode('&', $pairs);
+        }
+
+        return ($parts['scheme'] ?? 'http') . '://' . $parts['host']
+            . (isset($parts['port']) ? ':' . $parts['port'] : '')
+            . ($parts['path'] ?? '')
+            . $query;
+    }
+
+    /**
+     * @param string $url
+     * @return string
+     * @throws \RuntimeException when the request fails or doesn't return a 2xx response with a body
+     */
+    private static function _fetch(string $url): string
+    {
+        $safeUrl = self::_safeUrl($url);
+
+        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            throw new \RuntimeException("Unsupported URL scheme '{$scheme}', only http and https are allowed");
+        }
+
+        $cUrl = curl_init($url);
+        if ($cUrl === false) {
+            throw new \RuntimeException("cURL init failed for {$safeUrl}");
+        }
+        curl_setopt_array($cUrl, [
+            CURLOPT_RETURNTRANSFER  => true,
+            CURLOPT_FOLLOWLOCATION  => true,
+            CURLOPT_MAXREDIRS       => 5,
+            CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_CONNECTTIMEOUT  => self::CONNECT_TIMEOUT,
+            CURLOPT_TIMEOUT         => self::TIMEOUT,
+            CURLOPT_USERAGENT       => ini_get('user_agent') ?: self::USER_AGENT,
+            CURLOPT_ENCODING        => '',
+        ]);
+        $data = curl_exec($cUrl);
+        $status = curl_getinfo($cUrl, CURLINFO_RESPONSE_CODE);
+
+        if ($data === false) {
+            throw new \RuntimeException("cURL error for {$safeUrl}: " . curl_error($cUrl));
+        }
+        if ($status < 200 || $status >= 300) {
+            throw new \RuntimeException("HTTP {$status} for {$safeUrl}");
+        }
+        if ($data === '') {
+            throw new \RuntimeException("Empty response (HTTP {$status}) for {$safeUrl}");
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param string $url
+     * @return \SimpleXMLElement
+     * @throws \RuntimeException when fetching or parsing fails
+     */
+    private static function _loadXml(string $url): \SimpleXMLElement
+    {
+        $data = self::_fetch($url);
+
+        $useInternalErrors = libxml_use_internal_errors(true);
+        libxml_clear_errors();
+
+        $feedData = simplexml_load_string($data);
+        $xmlErrors = libxml_get_errors();
+
+        libxml_clear_errors();
+        libxml_use_internal_errors($useInternalErrors);
+
+        if ($feedData === false) {
+            $xmlError = NULL;
+            foreach ($xmlErrors as $candidate) {
+                if ($candidate->level === LIBXML_ERR_FATAL) {
+                    $xmlError = $candidate;
+                    break;
+                }
+            }
+            $xmlError = $xmlError ?? (end($xmlErrors) ?: NULL);
+            $reason = $xmlError
+                ? trim($xmlError->message) . " (line {$xmlError->line})"
+                : 'unknown error';
+            throw new \RuntimeException('Could not parse XML from ' . self::_safeUrl($url) . ": {$reason}");
+        }
+
+        return $feedData;
+    }
+
+    /**
+     * @param \SimpleXMLElement $links
+     * @param string $rel
+     * @return \SimpleXMLElement|null the first link with this rel; a missing rel counts as "alternate"
+     */
+    private static function _atomLink(\SimpleXMLElement $links, string $rel): ?\SimpleXMLElement
+    {
+        foreach ($links as $link) {
+            $linkRel = (string) $link->attributes()['rel'] ?: 'alternate';
+            if ($linkRel === $rel) {
+                return $link;
+            }
+        }
+        return NULL;
+    }
+
+    /**
+     * @param \SimpleXMLElement $feedData
+     * @param string $url the URL the feed was requested from
+     * @return FeedObject
+     */
+    private static function _buildAtomFeed(\SimpleXMLElement $feedData, string $url): FeedObject
+    {
+        // Read children in the Atom namespace whatever prefix it uses; '' for feeds without one.
+        $ns = in_array(self::ATOM_NAMESPACE, $feedData->getNamespaces(), true) ? self::ATOM_NAMESPACE : '';
+        $atom = $feedData->children($ns);
+
+        $siteLink = self::_atomLink($atom->link, 'alternate');
+        $selfLink = self::_atomLink($atom->link, 'self');
+
+        $feed = new FeedObject();
+        $feed->id = (string) $atom->id;
+        $feed->title = (string) $atom->title;
+        $feed->description = NULL;
+        $feed->language = NULL;
+        $feed->copyright = NULL;
+        $feed->webmaster = NULL;
+        $feed->updated = (string) $atom->updated;
+        $feed->published = NULL;
+        $feed->siteUrl = $siteLink !== NULL ? (string) $siteLink->attributes()['href'] : '';
+        $feed->feedUrl = $selfLink !== NULL ? (string) $selfLink->attributes()['href'] : $url;
+        $feed->items = self::_getAtomItems($atom->entry, $ns);
+
+        return $feed;
+    }
+
+    /**
+     * @param \SimpleXMLElement $entries
+     * @param string $ns
+     * @return ItemObject[]
+     */
+    private static function _getAtomItems(\SimpleXMLElement $entries, string $ns): array
+    {
+        $items = [];
+        foreach ($entries as $entryElement) {
+            $entry = $entryElement->children($ns);
+            $author = $entry->author ? $entry->author->children($ns) : NULL;
+            $itemLink = self::_atomLink($entry->link, 'alternate');
+            $imageLink = NULL;
+            foreach ($entry->link as $link) {
+                $attributes = $link->attributes();
+                if ((string) $attributes['rel'] === 'enclosure' && strpos((string) $attributes['type'], 'image/') === 0) {
+                    $imageLink = $attributes;
+                    break;
+                }
+            }
+
+            $item = new ItemObject();
+            $item->id = (string) $entry->id;
+            $item->title = (string) $entry->title;
+            $item->description = (string) $entry->summary;
+            $item->content = (string) $entry->content;
+            $item->authorName = $author ? (string) $author->name : '';
+            $item->authorEmail = $author ? (string) $author->email : '';
+            $item->updated = (string) $entry->updated;
+            $item->published = (string) $entry->published;
+            $item->itemUrl = $itemLink !== NULL ? (string) $itemLink->attributes()['href'] : NULL;
+            $item->imageUrl = $imageLink !== NULL ? (string) $imageLink['href'] : NULL;
+            $item->imageType = $imageLink !== NULL ? (string) $imageLink['type'] : NULL;
+            $item->imageTitle = $imageLink !== NULL ? (string) $imageLink['title'] : NULL;
+            $items[] = $item;
+        }
+        return $items;
+    }
+
+    /**
+     * @param \SimpleXMLElement $feedData
+     * @param string $url the URL the feed was requested from
+     * @return FeedObject
+     */
+    private static function _buildRSSFeed(\SimpleXMLElement $feedData, string $url): FeedObject
+    {
         $feed = new FeedObject();
         $feed->id = NULL;
         $feed->title = (string) $feedData->channel->title;
@@ -172,6 +307,8 @@ class RssParser
     {
         $items = [];
         foreach ($entries as $entry) {
+            $link = trim((string) $entry->link);
+
             $item = new ItemObject();
             $item->id = (string) $entry->id;
             $item->title = (string) $entry->title;
@@ -181,7 +318,7 @@ class RssParser
             $item->authorEmail = (string) $entry->author->email;
             $item->updated = (string) $entry->updated;
             $item->published = (string) $entry->pubDate;
-            $item->itemUrl = (string) $entry->link[0] ?? (string) $entry->guid;
+            $item->itemUrl = $link !== '' ? $link : (string) $entry->guid;
             $item->imageUrl = (string) $entry->enclosure['url'];
             $item->imageType = (string) $entry->enclosure['type'];
             $item->imageTitle = (string) $entry->enclosure['title'];
