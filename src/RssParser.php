@@ -11,12 +11,16 @@ class RssParser
 {
 
     public const ATOM_NAMESPACE = 'http://www.w3.org/2005/Atom';
+    public const ATOM03_NAMESPACE = 'http://purl.org/atom/ns#';
     public const RSS1_NAMESPACE = 'http://purl.org/rss/1.0/';
     public const XHTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
 
     public const CONNECT_TIMEOUT = 10;
     public const TIMEOUT = 30;
     public const USER_AGENT = 'Mozilla/5.0 (compatible; php-rss-parser)';
+
+    /** Root namespaces accepted for a <feed>: Atom 1.0, Atom 0.3 and none. */
+    private const ATOM_NAMESPACES = [self::ATOM_NAMESPACE, self::ATOM03_NAMESPACE, ''];
 
     /** Query parameters whose values are hidden in error messages. */
     private const SECRET_PARAMS = [
@@ -35,11 +39,7 @@ class RssParser
      */
     public static function getFeed(string $url): FeedObject
     {
-        return self::_parse(
-            fn() => self::_fetch($url),
-            self::_safeUrl($url),
-            fn(\SimpleXMLElement $xml, string $source) => self::_buildFeed($xml, $url, $source)
-        );
+        return self::_parseUrl($url, [self::class, '_buildFeed']);
     }
 
     /**
@@ -48,11 +48,7 @@ class RssParser
      */
     public static function getAtomFeedByUrl(string $url): FeedObject
     {
-        return self::_parse(
-            fn() => self::_fetch($url),
-            self::_safeUrl($url),
-            fn(\SimpleXMLElement $xml, string $source) => self::_buildAtomFeed($xml, $url, $source)
-        );
+        return self::_parseUrl($url, [self::class, '_buildAtomFeed']);
     }
 
     /**
@@ -61,11 +57,7 @@ class RssParser
      */
     public static function getRSSFeedByUrl(string $url): FeedObject
     {
-        return self::_parse(
-            fn() => self::_fetch($url),
-            self::_safeUrl($url),
-            fn(\SimpleXMLElement $xml, string $source) => self::_buildRSSFeed($xml, $url, $source)
-        );
+        return self::_parseUrl($url, [self::class, '_buildRSSFeed']);
     }
 
     /**
@@ -77,26 +69,69 @@ class RssParser
      */
     public static function getFeedFromFile(string $path): FeedObject
     {
-        return self::_parse(
-            fn() => self::_readFile($path),
-            $path,
-            fn(\SimpleXMLElement $xml, string $source) => self::_buildFeed($xml, $path, $source)
-        );
+        return self::_parseFile($path, [self::class, '_buildFeed']);
     }
 
     /**
-     * Reads and parses the feed, turning feed failures into a FeedObject with an error.
-     * Programming errors (\Error, \LogicException) are not caught.
+     * Reads an Atom feed from the local filesystem. Only pass trusted paths.
      *
-     * @param callable $read returns the raw feed body; throws \RuntimeException on failure
-     * @param string $source the URL or path as it may appear in error messages
-     * @param callable $builder receives the parsed \SimpleXMLElement and $source, returns a FeedObject
+     * @param string $path a filesystem path, not a URL
      * @return FeedObject
      */
-    private static function _parse(callable $read, string $source, callable $builder): FeedObject
+    public static function getAtomFeedFromFile(string $path): FeedObject
+    {
+        return self::_parseFile($path, [self::class, '_buildAtomFeed']);
+    }
+
+    /**
+     * Reads an RSS feed from the local filesystem. Only pass trusted paths.
+     *
+     * @param string $path a filesystem path, not a URL
+     * @return FeedObject
+     */
+    public static function getRSSFeedFromFile(string $path): FeedObject
+    {
+        return self::_parseFile($path, [self::class, '_buildRSSFeed']);
+    }
+
+    /**
+     * @param string $url
+     * @param callable $builder see _parse()
+     * @return FeedObject
+     */
+    private static function _parseUrl(string $url, callable $builder): FeedObject
+    {
+        return self::_parse(function () use ($url): array {
+            $safeUrl = self::_validateUrl($url);
+            return [self::_fetch($url, $safeUrl), $url, $safeUrl];
+        }, $builder);
+    }
+
+    /**
+     * @param string $path
+     * @param callable $builder see _parse()
+     * @return FeedObject
+     */
+    private static function _parseFile(string $path, callable $builder): FeedObject
+    {
+        return self::_parse(fn(): array => [self::_readFile($path), $path, $path], $builder);
+    }
+
+    /**
+     * Reads and parses the feed, turning failures caused by the feed or its location into a
+     * FeedObject with an error. Every such failure is a \RuntimeException; anything else is a
+     * bug in this library and is not caught.
+     *
+     * @param callable $load returns [string $body, string $feedUrl, string $source], where $source is
+     *                       the URL or path as it may appear in error messages
+     * @param callable $builder receives the parsed \SimpleXMLElement, $feedUrl and $source, returns a FeedObject
+     * @return FeedObject
+     */
+    private static function _parse(callable $load, callable $builder): FeedObject
     {
         try {
-            return $builder(self::_parseXml($read(), $source), $source);
+            [$data, $feedUrl, $source] = $load();
+            return $builder(self::_parseXml($data, $source), $feedUrl, $source);
         } catch (\RuntimeException $e) {
             $feed = new FeedObject();
             $feed->error = $e->getMessage();
@@ -112,44 +147,51 @@ class RssParser
      */
     private static function _buildFeed(\SimpleXMLElement $xml, string $feedUrl, string $source): FeedObject
     {
-        return self::_isAtom($xml)
+        return $xml->getName() === 'feed'
             ? self::_buildAtomFeed($xml, $feedUrl, $source)
             : self::_buildRSSFeed($xml, $feedUrl, $source);
     }
 
     /**
-     * Any <feed> root counts as Atom: Atom 1.0, Atom 0.3 and feeds without a namespace.
-     *
-     * @param \SimpleXMLElement $xml
-     * @return bool
-     */
-    private static function _isAtom(\SimpleXMLElement $xml): bool
-    {
-        return $xml->getName() === 'feed';
-    }
-
-    /**
-     * The namespace of the root element, whatever prefix it uses; '' when it has none.
+     * The namespace of the element itself, whatever prefix it uses; '' when it has none.
      *
      * @param \SimpleXMLElement $xml
      * @return string
      */
-    private static function _atomNs(\SimpleXMLElement $xml): string
+    private static function _namespaceOf(\SimpleXMLElement $xml): string
     {
         return dom_import_simplexml($xml)->namespaceURI ?? '';
     }
 
     /**
-     * Hides credentials and secret query values so error messages don't leak them.
+     * Checks that the URL can be fetched and returns it with credentials and secret query values hidden,
+     * for use in error messages.
      *
      * @param string $url
      * @return string
+     * @throws \RuntimeException when the URL is not an http(s) URL
      */
-    private static function _safeUrl(string $url): string
+    private static function _validateUrl(string $url): string
     {
+        if (strpos($url, "\0") !== false) {
+            throw new \RuntimeException('URL contains a NUL byte');
+        }
+
         $parts = parse_url($url);
-        if ($parts === false || !isset($parts['host'])) {
-            return '[invalid url]';
+        if ($parts === false) {
+            throw new \RuntimeException('Invalid URL');
+        }
+
+        $scheme = strtolower($parts['scheme'] ?? '');
+        // No scheme, file://, or a Windows drive letter (C:\feed.xml parses as scheme "c") means a local file.
+        if ($scheme === '' || $scheme === 'file' || strlen($scheme) === 1) {
+            throw new \RuntimeException('URL must start with http:// or https://; use getFeedFromFile() for local files');
+        }
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            throw new \RuntimeException("Unsupported URL scheme '{$scheme}', only http and https are allowed");
+        }
+        if (!isset($parts['host'])) {
+            throw new \RuntimeException('Invalid URL: no host');
         }
 
         $query = '';
@@ -164,7 +206,7 @@ class RssParser
             $query = '?' . implode('&', $pairs);
         }
 
-        return ($parts['scheme'] ?? 'http') . '://' . $parts['host']
+        return $scheme . '://' . $parts['host']
             . (isset($parts['port']) ? ':' . $parts['port'] : '')
             . ($parts['path'] ?? '')
             . $query;
@@ -181,7 +223,7 @@ class RssParser
             throw new \RuntimeException('File path contains a NUL byte');
         }
         if (strpos($path, '://') !== false) {
-            throw new \RuntimeException('getFeedFromFile() expects a filesystem path, not a URL; use getFeed() for URLs');
+            throw new \RuntimeException('Expected a filesystem path, not a URL; use getFeed() for URLs');
         }
         if (!is_file($path) || !is_readable($path)) {
             throw new \RuntimeException("Could not read file {$path}");
@@ -194,27 +236,13 @@ class RssParser
     }
 
     /**
-     * @param string $url
+     * @param string $url a URL that passed _validateUrl()
+     * @param string $safeUrl the URL as returned by _validateUrl(), for error messages
      * @return string
      * @throws \RuntimeException when the request fails or doesn't return a 2xx response with a body
      */
-    private static function _fetch(string $url): string
+    private static function _fetch(string $url, string $safeUrl): string
     {
-        if (strpos($url, "\0") !== false) {
-            throw new \RuntimeException('URL contains a NUL byte');
-        }
-
-        $safeUrl = self::_safeUrl($url);
-
-        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
-        // No scheme, file://, or a Windows drive letter (C:\feed.xml parses as scheme "c") means a local file.
-        if ($scheme === '' || $scheme === 'file' || strlen($scheme) === 1) {
-            throw new \RuntimeException('URL must start with http:// or https://; use getFeedFromFile() for local files');
-        }
-        if ($scheme !== 'http' && $scheme !== 'https') {
-            throw new \RuntimeException("Unsupported URL scheme '{$scheme}', only http and https are allowed");
-        }
-
         $cUrl = curl_init($url);
         if ($cUrl === false) {
             throw new \RuntimeException("cURL init failed for {$safeUrl}");
@@ -332,74 +360,103 @@ class RssParser
     }
 
     /**
-     * Text of an Atom text construct. Inline markup (type="xhtml", or Atom 0.3 mode="xml")
-     * is returned as HTML; base64 content (Atom 0.3 mode="base64") is decoded.
+     * Text of an Atom text construct. Inline markup is returned as HTML: Atom 1.0 type="xhtml",
+     * and Atom 0.3 mode="xml", which is the default mode in Atom 0.3. Atom 0.3 mode="base64" is decoded.
      *
      * @param \SimpleXMLElement $element
+     * @param string $ns the namespace of the feed
      * @return string
+     * @throws \RuntimeException when the inline markup can't be converted to HTML
      */
-    private static function _atomText(\SimpleXMLElement $element): string
+    private static function _atomText(\SimpleXMLElement $element, string $ns): string
     {
         $attributes = $element->attributes();
+        $dom = dom_import_simplexml($element);
+
         if ((string) $attributes['type'] === 'xhtml') {
-            foreach (dom_import_simplexml($element)->childNodes as $child) {
+            foreach ($dom->childNodes as $child) {
                 if ($child instanceof \DOMElement && $child->namespaceURI === self::XHTML_NAMESPACE && $child->localName === 'div') {
                     return self::_innerHtml($child);
                 }
             }
             return trim((string) $element);
         }
-        if ((string) $attributes['mode'] === 'xml') {
-            return self::_innerHtml(dom_import_simplexml($element));
+
+        if ($ns === self::ATOM03_NAMESPACE) {
+            $mode = (string) $attributes['mode'] ?: 'xml';
+            if ($mode === 'base64') {
+                $decoded = base64_decode((string) $element, true);
+                return $decoded === false ? '' : $decoded;
+            }
+            // Plain text in mode="xml" has no child elements and is returned as text, not escaped HTML.
+            if ($mode === 'xml' && $element->count() > 0) {
+                return self::_innerHtml($dom);
+            }
         }
-        if ((string) $attributes['mode'] === 'base64') {
-            $decoded = base64_decode((string) $element, true);
-            return $decoded === false ? '' : $decoded;
-        }
+
         return (string) $element;
     }
 
     /**
-     * Serializes the children of an element as HTML, dropping namespace prefixes from XHTML elements
-     * so <h:p> becomes <p>. Elements in other namespaces (such as SVG or MathML) are kept as they are.
+     * Serializes the children of an element as HTML. HTML has no namespaces, so every element is
+     * recreated by its local name: <h:p> becomes <p>, <svg:svg> becomes <svg>, and namespace
+     * declarations are dropped. Browsers recognise inline <svg> and <math> by name.
      *
      * @param \DOMElement $element
      * @return string
+     * @throws \RuntimeException when the markup can't be converted
      */
     private static function _innerHtml(\DOMElement $element): string
     {
-        $doc = new \DOMDocument('1.0', 'UTF-8');
-        $wrapper = $doc->appendChild($doc->createElement('div'));
-        foreach ($element->childNodes as $child) {
-            $wrapper->appendChild(self::_importAsHtml($doc, $child));
-        }
+        try {
+            $doc = new \DOMDocument('1.0', 'UTF-8');
+            $wrapper = $doc->appendChild($doc->createElement('div'));
+            foreach ($element->childNodes as $child) {
+                $copy = self::_importAsHtml($doc, $child);
+                if ($copy !== NULL) {
+                    $wrapper->appendChild($copy);
+                }
+            }
 
-        $html = '';
-        foreach ($wrapper->childNodes as $child) {
-            $html .= $doc->saveHTML($child);
+            $html = '';
+            foreach ($wrapper->childNodes as $child) {
+                $html .= $doc->saveHTML($child);
+            }
+            return $html;
+        } catch (\DOMException $e) {
+            throw new \RuntimeException('Could not convert inline markup to HTML: ' . $e->getMessage(), 0, $e);
         }
-        return $html;
     }
 
     /**
      * @param \DOMDocument $doc
      * @param \DOMNode $node
-     * @return \DOMNode a copy of $node in $doc, with XHTML elements recreated without namespace
+     * @return \DOMNode|null a namespace-free copy of $node in $doc, or NULL for nodes HTML can't hold
+     * @throws \DOMException
      */
-    private static function _importAsHtml(\DOMDocument $doc, \DOMNode $node): \DOMNode
+    private static function _importAsHtml(\DOMDocument $doc, \DOMNode $node): ?\DOMNode
     {
-        if (!$node instanceof \DOMElement || $node->namespaceURI !== self::XHTML_NAMESPACE) {
-            return $doc->importNode($node, true);
+        if ($node instanceof \DOMElement) {
+            $element = $doc->createElement($node->localName);
+            foreach ($node->attributes as $attribute) {
+                $element->setAttribute($attribute->nodeName, $attribute->value);
+            }
+            foreach ($node->childNodes as $child) {
+                $copy = self::_importAsHtml($doc, $child);
+                if ($copy !== NULL) {
+                    $element->appendChild($copy);
+                }
+            }
+            return $element;
         }
-
-        $element = $doc->createElement($node->localName);
-        foreach ($node->attributes as $attribute) {
-            $element->setAttributeNode($doc->importNode($attribute, true));
+        // Check CDATA before text: DOMCdataSection extends DOMText.
+        if ($node instanceof \DOMCdataSection || $node instanceof \DOMText) {
+            return $doc->createTextNode($node->data);
         }
-        foreach ($node->childNodes as $child) {
-            $element->appendChild(self::_importAsHtml($doc, $child));
+        if ($node instanceof \DOMComment) {
+            return $doc->createComment($node->data);
         }
-        return $element;
+        return NULL;
     }
 
     /**
@@ -413,11 +470,14 @@ class RssParser
      */
     private static function _buildAtomFeed(\SimpleXMLElement $feedData, string $feedUrl, string $source): FeedObject
     {
-        if (!self::_isAtom($feedData)) {
+        $ns = self::_namespaceOf($feedData);
+        if ($feedData->getName() !== 'feed') {
             throw new \RuntimeException("Not an Atom feed: {$source} has root element <{$feedData->getName()}>");
         }
+        if (!in_array($ns, self::ATOM_NAMESPACES, true)) {
+            throw new \RuntimeException("Not an Atom feed: {$source} has a <feed> root in namespace {$ns}");
+        }
 
-        $ns = self::_atomNs($feedData);
         $atom = $feedData->children($ns);
 
         $siteLink = self::_atomLinkByRel($atom->link, 'alternate');
@@ -457,8 +517,8 @@ class RssParser
             $item = new ItemObject();
             $item->id = (string) $entry->id;
             $item->title = (string) $entry->title;
-            $item->description = isset($entry->summary) ? self::_atomText($entry->summary) : '';
-            $item->content = isset($entry->content) ? self::_atomText($entry->content) : '';
+            $item->description = isset($entry->summary) ? self::_atomText($entry->summary, $ns) : '';
+            $item->content = isset($entry->content) ? self::_atomText($entry->content, $ns) : '';
             $item->authorName = $author !== NULL ? (string) $author->name : '';
             $item->authorEmail = $author !== NULL ? (string) $author->email : '';
             // Atom 0.3 calls these <modified> and <issued>.
@@ -514,6 +574,15 @@ class RssParser
         return $feed;
     }
 
+    /**
+     * @param string $value
+     * @return bool whether the value is an absolute http(s) URL
+     */
+    private static function _isHttpUrl(string $value): bool
+    {
+        $scheme = strtolower((string) parse_url($value, PHP_URL_SCHEME));
+        return ($scheme === 'http' || $scheme === 'https') && filter_var($value, FILTER_VALIDATE_URL) !== false;
+    }
 
     /**
      * @param object $entries
@@ -538,7 +607,8 @@ class RssParser
             $item->published = (string) $entry->pubDate;
             if ($link !== '') {
                 $item->itemUrl = $link;
-            } elseif ($guid !== '' && $guidIsPermaLink) {
+            } elseif ($guidIsPermaLink && self::_isHttpUrl($guid)) {
+                // A guid is a permalink by default, but feeds often put plain IDs in it anyway.
                 $item->itemUrl = $guid;
             } else {
                 $item->itemUrl = NULL;

@@ -13,10 +13,10 @@ namespace Timvandendries\PhpRssParser\objects;
  * @property string $authorEmail
  * @property string $updated
  * @property string $published
- * @property string $itemUrl
- * @property string $imageUrl
- * @property string $imageType
- * @property string $imageTitle
+ * @property null|string $itemUrl NULL when the item has no link
+ * @property null|string $imageUrl NULL for Atom items without an image enclosure
+ * @property null|string $imageType NULL for Atom items without an image enclosure
+ * @property null|string $imageTitle NULL for Atom items without an image enclosure
  *
  */
 class ItemObject extends \stdClass {
