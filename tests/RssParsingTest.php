@@ -29,12 +29,12 @@ final class RssParsingTest extends TestCase
         self::assertSame('Wed, 01 Oct 2026 12:00:00 GMT', $feed->updated, 'lastBuildDate is used for updated');
         self::assertSame('https://example.org/', $feed->siteUrl);
         self::assertSame($url, $feed->feedUrl, 'feedUrl is the requested URL');
-        self::assertCount(4, $feed->items);
+        self::assertCount(4, self::items($feed));
     }
 
     public function testItemFields(): void
     {
-        $item = self::feed('/feeds/rss.xml')->items[0];
+        $item = self::items(self::feed('/feeds/rss.xml'))[0];
 
         self::assertSame('Item with link', $item->title);
         self::assertSame('https://example.org/i1', $item->itemUrl);
@@ -45,7 +45,7 @@ final class RssParsingTest extends TestCase
 
     public function testItemUrlFallsBackToPermalinkGuidOnly(): void
     {
-        $items = self::feed('/feeds/rss.xml')->items;
+        $items = self::items(self::feed('/feeds/rss.xml'));
 
         self::assertSame('https://example.org/guid', $items[1]->itemUrl, 'permalink guid');
         self::assertNull($items[2]->itemUrl, 'guid with isPermaLink="false"');
@@ -58,8 +58,8 @@ final class RssParsingTest extends TestCase
 
         self::assertSame('RSS 1.0 feed', $feed->title);
         self::assertSame('https://example.org/', $feed->siteUrl);
-        self::assertSame('RDF item', $feed->items[0]->title);
-        self::assertSame('https://example.org/a', $feed->items[0]->itemUrl);
+        self::assertSame('RDF item', self::items($feed)[0]->title);
+        self::assertSame('https://example.org/a', self::items($feed)[0]->itemUrl);
     }
 
     public function testBomAndLeadingWhitespaceAreSkipped(): void

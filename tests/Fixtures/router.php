@@ -18,7 +18,10 @@
 
 declare(strict_types=1);
 
-$path = (string) parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+/** Request values are strings in practice, but PHP types $_SERVER and $_GET entries as mixed. */
+$stringValue = fn (mixed $value, string $default = ''): string => is_string($value) ? $value : $default;
+
+$path = (string) parse_url($stringValue($_SERVER['REQUEST_URI'] ?? null, '/'), PHP_URL_PATH);
 
 $serveFeed = function (string $name, string $prefix = ''): void {
     $file = __DIR__ . '/feeds/' . $name;
@@ -44,7 +47,7 @@ if (preg_match('~^/status/(\d{3})$~', $path, $match) === 1) {
 
 switch ($path) {
     case '/redirect':
-        header('Location: ' . ($_GET['to'] ?? '/'), true, 302);
+        header('Location: ' . $stringValue($_GET['to'] ?? null, '/'), true, 302);
         return true;
 
     case '/redirect-loop':
@@ -75,7 +78,7 @@ switch ($path) {
 
     case '/user-agent':
         header('Content-Type: application/xml');
-        echo '<rss><channel><title>', htmlspecialchars($_SERVER['HTTP_USER_AGENT'] ?? ''), '</title></channel></rss>';
+        echo '<rss><channel><title>', htmlspecialchars($stringValue($_SERVER['HTTP_USER_AGENT'] ?? null)), '</title></channel></rss>';
         return true;
 }
 

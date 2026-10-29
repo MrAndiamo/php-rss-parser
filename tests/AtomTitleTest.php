@@ -11,7 +11,7 @@ use Timvandendries\PhpRssParser\RssParser;
  */
 final class AtomTitleTest extends TestCase
 {
-    /** @var string[] */
+    /** @var list<string|null> the feed title, then each item title */
     private static array $titles = [];
 
     protected function setUp(): void
@@ -19,7 +19,7 @@ final class AtomTitleTest extends TestCase
         if (self::$titles === []) {
             $feed = RssParser::getFeed(self::serverUrl('/feeds/atom-titles.xml'), true);
             self::assertNull($feed->error);
-            self::$titles = array_merge([$feed->title], array_map(fn($item) => $item->title, $feed->items));
+            self::$titles = array_merge([$feed->title], array_map(fn ($item) => $item->title, self::items($feed)));
         }
     }
 

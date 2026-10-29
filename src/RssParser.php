@@ -9,7 +9,6 @@ use Timvandendries\PhpRssParser\objects\ItemObject;
 
 class RssParser
 {
-
     public const ATOM_NAMESPACE = 'http://www.w3.org/2005/Atom';
     public const ATOM03_NAMESPACE = 'http://purl.org/atom/ns#';
     public const RSS1_NAMESPACE = 'http://purl.org/rss/1.0/';
@@ -140,7 +139,7 @@ class RssParser
     /**
      * @param string $url
      * @param bool $allowPrivateNetworks see getFeed()
-     * @param callable $builder see _parse()
+     * @param callable(\SimpleXMLElement, string, string): FeedObject $builder see _parse()
      * @return FeedObject
      */
     private static function _parseUrl(string $url, bool $allowPrivateNetworks, callable $builder): FeedObject
@@ -153,12 +152,12 @@ class RssParser
 
     /**
      * @param string $path
-     * @param callable $builder see _parse()
+     * @param callable(\SimpleXMLElement, string, string): FeedObject $builder see _parse()
      * @return FeedObject
      */
     private static function _parseFile(string $path, callable $builder): FeedObject
     {
-        return self::_parse(fn(): array => [self::_readFile($path), $path, $path], $builder);
+        return self::_parse(fn (): array => [self::_readFile($path), $path, $path], $builder);
     }
 
     /**
@@ -166,9 +165,10 @@ class RssParser
      * FeedObject with an error. Every such failure is a \RuntimeException; anything else is a
      * bug in this library and is not caught.
      *
-     * @param callable $load returns [string $body, string $feedUrl, string $source], where $source is
-     *                       the URL or path as it may appear in error messages
-     * @param callable $builder receives the parsed \SimpleXMLElement, $feedUrl and $source, returns a FeedObject
+     * @param callable(): array{string, string, string} $load returns [body, feedUrl, source], where source is
+     *                                                       the URL or path as it may appear in error messages
+     * @param callable(\SimpleXMLElement, string, string): FeedObject $builder receives the parsed document,
+     *                                                                         feedUrl and source
      * @return FeedObject
      */
     private static function _parse(callable $load, callable $builder): FeedObject
@@ -355,7 +355,7 @@ class RssParser
             $addresses = gethostbynamel($host) ?: [];
             if ($addresses === []) {
                 foreach (@dns_get_record($host, DNS_AAAA) ?: [] as $record) {
-                    if (isset($record['ipv6'])) {
+                    if (isset($record['ipv6']) && is_string($record['ipv6'])) {
                         $addresses[] = $record['ipv6'];
                     }
                 }
@@ -413,6 +413,19 @@ class RssParser
     }
 
     /**
+     * @return array{version: string, features: int} the libcurl version and its feature bitmask
+     * @throws \RuntimeException when PHP can't report them
+     */
+    private static function _curlInfo(): array
+    {
+        $info = curl_version();
+        if ($info === false || !is_string($info['version'] ?? null) || !is_int($info['features'] ?? null)) {
+            throw new \RuntimeException('Could not read the libcurl version');
+        }
+        return ['version' => $info['version'], 'features' => $info['features']];
+    }
+
+    /**
      * The address list for a CURLOPT_RESOLVE entry. Several addresses, so cURL can fall back to the next
      * one when one is down, need libcurl 7.59; IPv6 addresses in brackets need 7.57. Older libcurl
      * gets a single address, IPv4 when there is one.
@@ -423,9 +436,9 @@ class RssParser
      */
     private static function _pinList(array $addresses): string
     {
-        $version = curl_version()['version'];
+        $version = self::_curlInfo()['version'];
         if (version_compare($version, '7.59.0', '<')) {
-            $ipv4 = array_values(array_filter($addresses, fn(string $address) => strpos($address, ':') === false));
+            $ipv4 = array_values(array_filter($addresses, fn (string $address) => strpos($address, ':') === false));
             if ($ipv4 !== []) {
                 $addresses = [$ipv4[0]];
             } elseif (version_compare($version, '7.57.0', '<')) {
@@ -434,7 +447,7 @@ class RssParser
                 $addresses = [$addresses[0]];
             }
         }
-        return implode(',', array_map(fn(string $address) => strpos($address, ':') !== false ? "[{$address}]" : $address, $addresses));
+        return implode(',', array_map(fn (string $address) => strpos($address, ':') !== false ? "[{$address}]" : $address, $addresses));
     }
 
     /**
@@ -461,8 +474,9 @@ class RssParser
      */
     private static function _blockedRanges(): array
     {
-        static $ranges = NULL;
-        if ($ranges === NULL) {
+        /** @var list<array{string, int}>|null $ranges */
+        static $ranges = null;
+        if ($ranges === null) {
             $ranges = [];
             foreach (self::BLOCKED_RANGES as $range) {
                 [$network, $bits] = explode('/', $range);
@@ -491,7 +505,7 @@ class RssParser
             throw new \RuntimeException("Could not read file {$path}");
         }
         // Read at most one byte more than allowed, so the limit holds even if the file grows or reports a wrong size.
-        $data = file_get_contents($path, false, NULL, 0, self::MAX_RESPONSE_SIZE + 1);
+        $data = file_get_contents($path, false, null, 0, self::MAX_RESPONSE_SIZE + 1);
         if ($data === false || $data === '') {
             throw new \RuntimeException("Could not read file {$path}");
         }
@@ -566,7 +580,7 @@ class RssParser
             CURLOPT_MAXFILESIZE     => self::MAX_RESPONSE_SIZE,
         ];
 
-        $checkedAddresses = NULL;
+        $checkedAddresses = null;
         if (!$allowPrivateNetworks) {
             // A proxy would resolve and connect to the host itself, out of reach of the address check,
             // so connect directly. Proxies (also from http_proxy and similar) need $allowPrivateNetworks.
@@ -586,7 +600,7 @@ class RssParser
         // address given above. Without an asynchronous resolver, cURL times its own lookups out with
         // signals, so keep signals on then and give whole seconds (signal timeouts below a second fire
         // at once). In every other case turn signals off, which millisecond timeouts need.
-        $asyncDns = (curl_version()['features'] & CURL_VERSION_ASYNCHDNS) !== 0;
+        $asyncDns = (self::_curlInfo()['features'] & CURL_VERSION_ASYNCHDNS) !== 0;
         if ($allowPrivateNetworks && !$asyncDns) {
             $remainingSeconds = (int) ceil($remainingMs / 1000);
             $options[CURLOPT_TIMEOUT] = $remainingSeconds;
@@ -623,7 +637,7 @@ class RssParser
         }
         // Second line of defence for the pin above: refuse the response unless cURL really connected
         // to an address that was checked, whatever this libcurl did with CURLOPT_RESOLVE.
-        if ($checkedAddresses !== NULL) {
+        if ($checkedAddresses !== null) {
             $connectedTo = (string) curl_getinfo($cUrl, CURLINFO_PRIMARY_IP);
             if (!self::_isOneOf($connectedTo, $checkedAddresses)) {
                 throw new \RuntimeException("Refusing the response from {$safeUrl}: cURL connected to {$connectedTo}, which was not checked");
@@ -662,14 +676,14 @@ class RssParser
         libxml_use_internal_errors($useInternalErrors);
 
         if ($feedData === false) {
-            $xmlError = NULL;
+            $xmlError = null;
             foreach ($xmlErrors as $candidate) {
                 if ($candidate->level === LIBXML_ERR_FATAL) {
                     $xmlError = $candidate;
                     break;
                 }
             }
-            $xmlError = $xmlError ?? (end($xmlErrors) ?: NULL);
+            $xmlError = $xmlError ?? (end($xmlErrors) ?: null);
             $reason = $xmlError
                 ? trim($xmlError->message) . " (line {$xmlError->line})"
                 : 'unknown error';
@@ -692,7 +706,7 @@ class RssParser
                 return $attributes;
             }
         }
-        return NULL;
+        return null;
     }
 
     /**
@@ -702,7 +716,7 @@ class RssParser
      */
     private static function _atomLinkByRel(\SimpleXMLElement $links, string $rel): ?\SimpleXMLElement
     {
-        return self::_atomLink($links, fn(\SimpleXMLElement $attributes) => ((string) $attributes['rel'] ?: 'alternate') === $rel);
+        return self::_atomLink($links, fn (\SimpleXMLElement $attributes) => ((string) $attributes['rel'] ?: 'alternate') === $rel);
     }
 
     /**
@@ -736,6 +750,10 @@ class RssParser
         $attributes = $element->attributes();
         $type = (string) $attributes['type'];
         $dom = dom_import_simplexml($element);
+        // Text constructs are elements; dom_import_simplexml() only returns a DOMAttr for attributes.
+        if (!$dom instanceof \DOMElement) {
+            return [null, (string) $element, false];
+        }
 
         if ($type === 'xhtml') {
             foreach ($dom->childNodes as $child) {
@@ -743,7 +761,7 @@ class RssParser
                     return [$child, '', false];
                 }
             }
-            return [NULL, trim((string) $element), false];
+            return [null, trim((string) $element), false];
         }
 
         if ($ns === self::ATOM03_NAMESPACE) {
@@ -752,17 +770,17 @@ class RssParser
             $mode = (string) $attributes['mode'] ?: 'xml';
             if ($mode === 'base64') {
                 $decoded = base64_decode((string) $element, true);
-                return [NULL, $decoded === false ? '' : $decoded, $isHtml];
+                return [null, $decoded === false ? '' : $decoded, $isHtml];
             }
             // Plain text in mode="xml" has no child elements and stays text. (SimpleXML's count()
             // can't tell: on $entry->content it counts the <content> elements, not their children.)
             if ($mode === 'xml' && self::_hasChildElements($dom)) {
                 return [$dom, '', false];
             }
-            return [NULL, (string) $element, $isHtml];
+            return [null, (string) $element, $isHtml];
         }
 
-        return [NULL, (string) $element, $type === 'html'];
+        return [null, (string) $element, $type === 'html'];
     }
 
     /**
@@ -792,7 +810,7 @@ class RssParser
     private static function _atomText(\SimpleXMLElement $element, string $ns): string
     {
         [$markup, $text] = self::_atomTextParts($element, $ns);
-        return $markup !== NULL ? self::_innerHtml($markup) : $text;
+        return $markup !== null ? self::_innerHtml($markup) : $text;
     }
 
     /**
@@ -808,7 +826,7 @@ class RssParser
     private static function _atomPlainText(\SimpleXMLElement $element, string $ns): string
     {
         [$markup, $text, $isHtml] = self::_atomTextParts($element, $ns);
-        if ($markup !== NULL) {
+        if ($markup !== null) {
             $text = self::_nodeText($markup);
         } elseif ($isHtml) {
             $text = self::_htmlToText($text);
@@ -829,8 +847,8 @@ class RssParser
         libxml_clear_errors();
         libxml_use_internal_errors($useInternalErrors);
 
-        $body = $loaded ? $doc->getElementsByTagName('body')->item(0) : NULL;
-        return $body !== NULL ? self::_nodeText($body) : strip_tags($html);
+        $body = $loaded ? $doc->getElementsByTagName('body')->item(0) : null;
+        return $body !== null ? self::_nodeText($body) : strip_tags($html);
     }
 
     /**
@@ -851,7 +869,7 @@ class RssParser
             return '';
         }
 
-        $name = strtolower($node->localName);
+        $name = strtolower($node->localName ?? $node->nodeName);
         if ($name === 'script' || $name === 'style') {
             return '';
         }
@@ -870,7 +888,7 @@ class RssParser
     private static function _collapseWhitespace(string $text): string
     {
         $collapsed = preg_replace('~[\s\p{Z}\x{200B}\x{FEFF}]+~u', ' ', $text);
-        if ($collapsed === NULL) {
+        if ($collapsed === null) {
             // Not valid UTF-8, which the Unicode pattern needs: collapse ASCII whitespace only.
             $collapsed = (string) preg_replace('~[ \t\r\n]+~', ' ', $text);
         }
@@ -894,7 +912,7 @@ class RssParser
             $wrapper = $doc->appendChild($doc->createElement('div'));
             foreach ($element->childNodes as $child) {
                 $copy = self::_importAsHtml($doc, $child);
-                if ($copy !== NULL) {
+                if ($copy !== null) {
                     $wrapper->appendChild($copy);
                 }
             }
@@ -918,13 +936,13 @@ class RssParser
     private static function _importAsHtml(\DOMDocument $doc, \DOMNode $node): ?\DOMNode
     {
         if ($node instanceof \DOMElement) {
-            $element = $doc->createElement($node->localName);
+            $element = $doc->createElement($node->localName ?? $node->nodeName);
             foreach ($node->attributes as $attribute) {
                 $element->setAttribute($attribute->nodeName, $attribute->value);
             }
             foreach ($node->childNodes as $child) {
                 $copy = self::_importAsHtml($doc, $child);
-                if ($copy !== NULL) {
+                if ($copy !== null) {
                     $element->appendChild($copy);
                 }
             }
@@ -937,7 +955,7 @@ class RssParser
         if ($node instanceof \DOMComment) {
             return $doc->createComment($node->data);
         }
-        return NULL;
+        return null;
     }
 
     /**
@@ -967,15 +985,15 @@ class RssParser
         $feed = new FeedObject();
         $feed->id = (string) $atom->id;
         $feed->title = isset($atom->title) ? self::_atomPlainText($atom->title, $ns) : '';
-        $feed->description = NULL;
-        $feed->language = NULL;
-        $feed->copyright = NULL;
-        $feed->webmaster = NULL;
+        $feed->description = null;
+        $feed->language = null;
+        $feed->copyright = null;
+        $feed->webmaster = null;
         // Atom 0.3 calls this <modified>.
         $feed->updated = (string) $atom->updated ?: (string) $atom->modified;
-        $feed->published = NULL;
-        $feed->siteUrl = $siteLink !== NULL ? (string) $siteLink['href'] : '';
-        $feed->feedUrl = $selfLink !== NULL ? (string) $selfLink['href'] : $feedUrl;
+        $feed->published = null;
+        $feed->siteUrl = $siteLink !== null ? (string) $siteLink['href'] : '';
+        $feed->feedUrl = $selfLink !== null ? (string) $selfLink['href'] : $feedUrl;
         $feed->items = self::_getAtomItems($atom->entry, $ns);
 
         return $feed;
@@ -984,14 +1002,14 @@ class RssParser
     /**
      * @param \SimpleXMLElement $entries
      * @param string $ns
-     * @return ItemObject[]
+     * @return list<ItemObject>
      */
     private static function _getAtomItems(\SimpleXMLElement $entries, string $ns): array
     {
         $items = [];
         foreach ($entries as $entryElement) {
             $entry = $entryElement->children($ns);
-            $author = isset($entry->author) ? $entry->author->children($ns) : NULL;
+            $author = isset($entry->author) ? $entry->author->children($ns) : null;
             $itemLink = self::_atomLinkByRel($entry->link, 'alternate');
             $imageLink = self::_atomLink($entry->link, [self::class, '_isImageEnclosure']);
 
@@ -1000,15 +1018,15 @@ class RssParser
             $item->title = isset($entry->title) ? self::_atomPlainText($entry->title, $ns) : '';
             $item->description = isset($entry->summary) ? self::_atomText($entry->summary, $ns) : '';
             $item->content = isset($entry->content) ? self::_atomText($entry->content, $ns) : '';
-            $item->authorName = $author !== NULL ? (string) $author->name : '';
-            $item->authorEmail = $author !== NULL ? (string) $author->email : '';
+            $item->authorName = $author !== null ? (string) $author->name : '';
+            $item->authorEmail = $author !== null ? (string) $author->email : '';
             // Atom 0.3 calls these <modified> and <issued>.
             $item->updated = (string) $entry->updated ?: (string) $entry->modified;
             $item->published = (string) $entry->published ?: (string) $entry->issued;
-            $item->itemUrl = $itemLink !== NULL ? (string) $itemLink['href'] : NULL;
-            $item->imageUrl = $imageLink !== NULL ? (string) $imageLink['href'] : NULL;
-            $item->imageType = $imageLink !== NULL ? (string) $imageLink['type'] : NULL;
-            $item->imageTitle = $imageLink !== NULL ? (string) $imageLink['title'] : NULL;
+            $item->itemUrl = $itemLink !== null ? (string) $itemLink['href'] : null;
+            $item->imageUrl = $imageLink !== null ? (string) $imageLink['href'] : null;
+            $item->imageType = $imageLink !== null ? (string) $imageLink['type'] : null;
+            $item->imageTitle = $imageLink !== null ? (string) $imageLink['title'] : null;
             $items[] = $item;
         }
         return $items;
@@ -1040,7 +1058,7 @@ class RssParser
         }
 
         $feed = new FeedObject();
-        $feed->id = NULL;
+        $feed->id = null;
         $feed->title = (string) $channel->title;
         $feed->description = (string) $channel->description;
         $feed->language = (string) $channel->language;
@@ -1066,10 +1084,10 @@ class RssParser
     }
 
     /**
-     * @param object $entries
-     * @return ItemObject[]
+     * @param \SimpleXMLElement $entries
+     * @return list<ItemObject>
      */
-    private static function _getRSSItems(object $entries): array
+    private static function _getRSSItems(\SimpleXMLElement $entries): array
     {
         $items = [];
         foreach ($entries as $entry) {
@@ -1092,7 +1110,7 @@ class RssParser
                 // A guid is a permalink by default, but feeds often put plain IDs in it anyway.
                 $item->itemUrl = $guid;
             } else {
-                $item->itemUrl = NULL;
+                $item->itemUrl = null;
             }
             $item->imageUrl = (string) $entry->enclosure['url'];
             $item->imageType = (string) $entry->enclosure['type'];

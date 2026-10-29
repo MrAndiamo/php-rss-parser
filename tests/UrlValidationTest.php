@@ -13,7 +13,7 @@ use Timvandendries\PhpRssParser\RssParser;
 final class UrlValidationTest extends TestCase
 {
     /**
-     * @return array<string, array{0: string, 1: string}>
+     * @return array<string, array{0: string, 1: non-empty-string}>
      */
     public static function refusedUrls(): array
     {
@@ -36,6 +36,9 @@ final class UrlValidationTest extends TestCase
         ];
     }
 
+    /**
+     * @param non-empty-string $expectedError
+     */
     #[DataProvider('refusedUrls')]
     public function testRefusedUrls(string $url, string $expectedError): void
     {
@@ -73,7 +76,7 @@ final class UrlValidationTest extends TestCase
     #[DataProvider('preparedUrls')]
     public function testUrlsAreRebuiltForCurl(string $url, array $expected): void
     {
-        $prepared = self::callPrivate('_prepareUrl', $url);
+        $prepared = self::prepare($url);
         foreach ($expected as $key => $value) {
             self::assertSame($value, $prepared[$key], $key);
         }
@@ -92,8 +95,18 @@ final class UrlValidationTest extends TestCase
         if (!function_exists('idn_to_ascii')) {
             self::markTestSkipped('Needs the intl extension');
         }
-        $prepared = self::callPrivate('_prepareUrl', 'http://Bücher.de/feed');
+        $prepared = self::prepare('http://Bücher.de/feed');
         self::assertSame('xn--bcher-kva.de', $prepared['host']);
         self::assertSame('http://xn--bcher-kva.de/feed', $prepared['url']);
+    }
+
+    /**
+     * @return array<mixed> what _prepareUrl() returns
+     */
+    private static function prepare(string $url): array
+    {
+        $prepared = self::callPrivate('_prepareUrl', $url);
+        self::assertIsArray($prepared);
+        return $prepared;
     }
 }

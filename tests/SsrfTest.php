@@ -100,7 +100,12 @@ final class SsrfTest extends TestCase
     {
         $pin = self::callPrivate('_pinList', ['93.184.216.34', '2606:2800:220:1::1', '93.184.216.35']);
 
-        if (version_compare(curl_version()['version'], '7.59.0', '>=')) {
+        $curl = curl_version();
+        self::assertIsArray($curl);
+        $version = $curl['version'] ?? null;
+        self::assertIsString($version);
+
+        if (version_compare($version, '7.59.0', '>=')) {
             self::assertSame('93.184.216.34,[2606:2800:220:1::1],93.184.216.35', $pin);
         } else {
             self::assertSame('93.184.216.34', $pin, 'older libcurl gets one IPv4 address');

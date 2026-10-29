@@ -26,7 +26,7 @@ final class AtomParsingTest extends TestCase
         self::assertSame('https://example.org/', $feed->siteUrl, 'siteUrl is the link without rel (alternate)');
         self::assertSame('https://example.org/atom.xml', $feed->feedUrl, 'feedUrl is the rel="self" link');
         self::assertFalse($feed->hasError());
-        self::assertCount(4, $feed->items);
+        self::assertCount(4, self::items($feed));
     }
 
     public function testFeedUrlFallsBackToRequestedUrlWithoutSelfLink(): void
@@ -37,7 +37,7 @@ final class AtomParsingTest extends TestCase
 
     public function testEntryFields(): void
     {
-        $item = self::feed('/feeds/atom.xml')->items[0];
+        $item = self::items(self::feed('/feeds/atom.xml'))[0];
 
         self::assertSame('urn:entry:1', $item->id);
         self::assertSame('Entry with xhtml content', $item->title);
@@ -52,7 +52,7 @@ final class AtomParsingTest extends TestCase
 
     public function testImageComesOnlyFromImageEnclosures(): void
     {
-        $items = self::feed('/feeds/atom.xml')->items;
+        $items = self::items(self::feed('/feeds/atom.xml'));
 
         self::assertNull($items[0]->imageUrl, 'a rel="replies" link is not an image');
         self::assertNull($items[0]->imageType);
@@ -68,7 +68,7 @@ final class AtomParsingTest extends TestCase
 
     public function testItemUrlIsNullWithoutAlternateLink(): void
     {
-        $items = self::feed('/feeds/atom.xml')->items;
+        $items = self::items(self::feed('/feeds/atom.xml'));
 
         self::assertNull($items[2]->itemUrl, 'only enclosures');
         self::assertNull($items[3]->itemUrl, 'only rel="related"');
@@ -77,7 +77,7 @@ final class AtomParsingTest extends TestCase
     public function testPrefixedAtomAndXhtmlContentBecomesNamespaceFreeHtml(): void
     {
         $feed = self::feed('/feeds/atom-prefixed.xml');
-        $item = $feed->items[0];
+        $item = self::items($feed)[0];
 
         self::assertSame('Prefixed feed', $feed->title);
         self::assertSame('Prefixed entry', $item->title);
@@ -92,7 +92,7 @@ final class AtomParsingTest extends TestCase
     public function testAtom03(): void
     {
         $feed = self::feed('/feeds/atom03.xml');
-        [$inline, $encoded] = $feed->items;
+        [$inline, $encoded] = self::items($feed);
 
         self::assertSame('Atom 0.3 feed', $feed->title);
         self::assertSame('2004-01-01T00:00:00Z', $feed->updated, '<modified> is used for updated');
@@ -112,7 +112,7 @@ final class AtomParsingTest extends TestCase
         $feed = self::feed('/feeds/atom-no-namespace.xml');
 
         self::assertSame('No namespace', $feed->title);
-        self::assertSame('https://example.org/n1', $feed->items[0]->itemUrl);
+        self::assertSame('https://example.org/n1', self::items($feed)[0]->itemUrl);
     }
 
     public function testFeedRootInOtherNamespaceIsRefused(): void

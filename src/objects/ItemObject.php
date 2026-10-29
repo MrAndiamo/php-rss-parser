@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace Timvandendries\PhpRssParser\objects;
 
@@ -23,16 +23,19 @@ namespace Timvandendries\PhpRssParser\objects;
  * such as HTML Purifier before putting them on a page. Atom titles are plain text; escape them, like
  * every other text field, with htmlspecialchars() before output.
  */
-class ItemObject extends \stdClass {
-
-    public function __set(string $name, $value): void {
+class ItemObject extends \stdClass
+{
+    public function __set(string $name, mixed $value): void
+    {
         $this->{$name} = $value;
     }
 
-    public function __get(string $name) {
+    public function __get(string $name): mixed
+    {
         return $this->{$name};
     }
 
+    /** @var array<string, string> */
     protected array $_fields = [
         'id'            => 'id',
         'title'         => 'title',
@@ -48,19 +51,20 @@ class ItemObject extends \stdClass {
         'imageTitle'    => 'imageTitle'
     ];
 
+    /** @var array<string, array{type: string, nullable: bool}> */
     protected array $_field_types = [
-        'id'            => ['type' => 'string', 'nullable' => TRUE],
-        'title'         => ['type' => 'string', 'nullable' => TRUE],
-        'description'   => ['type' => 'string', 'nullable' => TRUE],
-        'content'       => ['type' => 'string', 'nullable' => TRUE],
-        'authorName'    => ['type' => 'string', 'nullable' => TRUE],
-        'authorEmail'   => ['type' => 'string', 'nullable' => TRUE],
-        'updated'       => ['type' => 'string', 'nullable' => TRUE],
-        'published'     => ['type' => 'string', 'nullable' => TRUE],
-        'itemUrl'       => ['type' => 'string', 'nullable' => TRUE],
-        'imageUrl'      => ['type' => 'string', 'nullable' => TRUE],
-        'imageType'     => ['type' => 'string', 'nullable' => TRUE],
-        'imageTitle'    => ['type' => 'string', 'nullable' => TRUE]
+        'id'            => ['type' => 'string', 'nullable' => true],
+        'title'         => ['type' => 'string', 'nullable' => true],
+        'description'   => ['type' => 'string', 'nullable' => true],
+        'content'       => ['type' => 'string', 'nullable' => true],
+        'authorName'    => ['type' => 'string', 'nullable' => true],
+        'authorEmail'   => ['type' => 'string', 'nullable' => true],
+        'updated'       => ['type' => 'string', 'nullable' => true],
+        'published'     => ['type' => 'string', 'nullable' => true],
+        'itemUrl'       => ['type' => 'string', 'nullable' => true],
+        'imageUrl'      => ['type' => 'string', 'nullable' => true],
+        'imageType'     => ['type' => 'string', 'nullable' => true],
+        'imageTitle'    => ['type' => 'string', 'nullable' => true]
     ];
 
 }

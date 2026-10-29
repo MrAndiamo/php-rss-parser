@@ -97,7 +97,8 @@ final class FetchTest extends TestCase
             self::assertStringStartsWith('Timed out after ' . RssParser::TIMEOUT . ' seconds', $e->getMessage());
         }
 
-        [$status] = self::callPrivate('_request', $target, true, microtime(true) + 5);
-        self::assertSame(200, $status);
+        $result = self::callPrivate('_request', $target, true, microtime(true) + 5);
+        self::assertIsArray($result);
+        self::assertSame(200, $result[0] ?? null);
     }
 }

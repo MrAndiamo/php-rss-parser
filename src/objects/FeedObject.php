@@ -1,10 +1,8 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace Timvandendries\PhpRssParser\objects;
-
-use Timvandendries\PhpRssParser\objects\ItemObject;
 
 /**
  * @property null|string $id
@@ -17,39 +15,44 @@ use Timvandendries\PhpRssParser\objects\ItemObject;
  * @property null|string $published
  * @property null|string $siteUrl
  * @property null|string $feedUrl
- * @property null|ItemObject[] $items
+ * @property null|list<ItemObject> $items
  * @property null|string $error
  *
  * All values except $error come from the feed and are untrusted plain text (Atom titles too):
  * escape them with htmlspecialchars() before putting them on a page.
  */
-class FeedObject extends \stdClass {
+class FeedObject extends \stdClass
+{
+    public ?string $id = null;
+    public ?string $title = null;
+    public ?string $description = null;
+    public ?string $language = null;
+    public ?string $copyright = null;
+    public ?string $webmaster = null;
+    public ?string $updated = null;
+    public ?string $published = null;
+    public ?string $siteUrl = null;
+    public ?string $feedUrl = null;
+    /** @var list<ItemObject>|null */
+    public ?array $items = null;
+    public ?string $error = null;
 
-    public ?string $id = NULL;
-    public ?string $title = NULL;
-    public ?string $description = NULL;
-    public ?string $language = NULL;
-    public ?string $copyright = NULL;
-    public ?string $webmaster = NULL;
-    public ?string $updated = NULL;
-    public ?string $published = NULL;
-    public ?string $siteUrl = NULL;
-    public ?string $feedUrl = NULL;
-    public ?array $items = NULL;
-    public ?string $error = NULL;
-
-    public function hasError(): bool {
-        return $this->error !== NULL;
+    public function hasError(): bool
+    {
+        return $this->error !== null;
     }
 
-    public function __set(string $name, $value): void {
+    public function __set(string $name, mixed $value): void
+    {
         $this->{$name} = $value;
     }
 
-    public function __get(string $name) {
+    public function __get(string $name): mixed
+    {
         return $this->{$name};
     }
 
+    /** @var array<string, string> */
     protected array $_fields = [
         'id'            => 'id',
         'title'         => 'title',
@@ -65,18 +68,19 @@ class FeedObject extends \stdClass {
         'error'         => 'error',
     ];
 
+    /** @var array<string, array{type: string|list<class-string>, nullable: bool}> */
     protected array $_field_types = [
-        'id'            => ['type' => 'string', 'nullable' => TRUE],
-        'title'         => ['type' => 'string', 'nullable' => TRUE],
-        'description'   => ['type' => 'string', 'nullable' => TRUE],
-        'language'      => ['type' => 'string', 'nullable' => TRUE],
-        'copyright'     => ['type' => 'string', 'nullable' => TRUE],
-        'webmaster'     => ['type' => 'string', 'nullable' => TRUE],
-        'updated'       => ['type' => 'string', 'nullable' => TRUE],
-        'published'     => ['type' => 'string', 'nullable' => TRUE],
-        'siteUrl'       => ['type' => 'string', 'nullable' => TRUE],
-        'feedUrl'       => ['type' => 'string', 'nullable' => TRUE],
-        'items'         => ['type' => [ItemObject::class], 'nullable' => TRUE],
-        'error'         => ['type' => 'string', 'nullable' => TRUE],
+        'id'            => ['type' => 'string', 'nullable' => true],
+        'title'         => ['type' => 'string', 'nullable' => true],
+        'description'   => ['type' => 'string', 'nullable' => true],
+        'language'      => ['type' => 'string', 'nullable' => true],
+        'copyright'     => ['type' => 'string', 'nullable' => true],
+        'webmaster'     => ['type' => 'string', 'nullable' => true],
+        'updated'       => ['type' => 'string', 'nullable' => true],
+        'published'     => ['type' => 'string', 'nullable' => true],
+        'siteUrl'       => ['type' => 'string', 'nullable' => true],
+        'feedUrl'       => ['type' => 'string', 'nullable' => true],
+        'items'         => ['type' => [ItemObject::class], 'nullable' => true],
+        'error'         => ['type' => 'string', 'nullable' => true],
     ];
 }

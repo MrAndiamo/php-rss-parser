@@ -38,10 +38,10 @@ final class FeedServer
 
     public function stop(): void
     {
-        if ($this->process !== NULL) {
+        if ($this->process !== null) {
             proc_terminate($this->process);
             proc_close($this->process);
-            $this->process = NULL;
+            $this->process = null;
         }
     }
 
