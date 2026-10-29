@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<atom:feed xmlns:atom="http://www.w3.org/2005/Atom" xmlns:h="http://www.w3.org/1999/xhtml">
+    <atom:title>Prefixed feed</atom:title>
+    <atom:entry>
+        <atom:title>Prefixed entry</atom:title>
+        <atom:author><atom:name>Bob</atom:name></atom:author>
+        <atom:link href="https://example.org/p"/>
+        <atom:content type="xhtml"><h:div><h:p class="a" xml:lang="nl">é &amp; x<h:br/></h:p><h:p></h:p><h:p><svg:svg xmlns:svg="http://www.w3.org/2000/svg"><svg:circle r="1"/></svg:svg></h:p><![CDATA[a<b]]><!-- note --></h:div></atom:content>
+    </atom:entry>
+</atom:feed>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <title type="html">Feed &amp;amp; &lt;em&gt;Co&lt;/em&gt;&lt;script&gt;x()&lt;/script&gt;</title>
+    <entry><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">My
+        <b>Post</b></div></title></entry>
+    <entry><title>&lt;script&gt;alert(1)&lt;/script&gt;</title></entry>
+    <entry><title type="html">caf&amp;eacute; 日本</title></entry>
+    <entry><title type="html">Breaking&lt;br&gt;News</title></entry>
+    <entry><title type="html">&lt;p&gt;Part 1&lt;/p&gt;&lt;p&gt;Part 2&lt;/p&gt;</title></entry>
+    <entry><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">Hello<style>p{color:red}</style><script>x()</script></div></title></entry>
+    <entry><title type="html">&amp;nbsp;Title&amp;nbsp;&amp;nbsp;Text&amp;nbsp;</title></entry>
+</feed>

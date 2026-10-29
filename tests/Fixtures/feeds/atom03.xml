@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed version="0.3" xmlns="http://purl.org/atom/ns#">
+    <title>Atom 0.3 feed</title>
+    <modified>2004-01-01T00:00:00Z</modified>
+    <link rel="alternate" href="https://old.example.org/"/>
+    <entry>
+        <title>Inline XML</title>
+        <issued>2003-12-31T00:00:00Z</issued>
+        <modified>2004-01-01T00:00:00Z</modified>
+        <link rel="alternate" href="https://old.example.org/1"/>
+        <content type="application/xhtml+xml"><div xmlns="http://www.w3.org/1999/xhtml"><p>Hello</p></div></content>
+        <summary mode="xml"><b>bold</b> x</summary>
+    </entry>
+    <entry>
+        <title mode="base64">QmFzZSA2NCB0aXRsZQ==</title>
+        <content type="text/plain">a &amp; b</content>
+        <summary mode="base64">aGVsbG8=</summary>
+    </entry>
+</feed>

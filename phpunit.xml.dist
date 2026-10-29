@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="vendor/autoload.php" colors="true">
+    <testsuites>
+        <testsuite name="php-rss-parser">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+    <!-- Tests that need internet access; run them with `composer test-network`. -->
+    <groups>
+        <exclude>
+            <group>network</group>
+        </exclude>
+    </groups>
+</phpunit>

@@ -22,13 +22,6 @@ class RssParser
     public const MAX_RESPONSE_SIZE = 10 * 1024 * 1024;
     public const USER_AGENT = 'Mozilla/5.0 (compatible; php-rss-parser)';
 
-    /**
-     * Whether URLs may point at private, loopback, link-local or otherwise reserved addresses.
-     * Off by default, so URLs from user input can't reach internal services (SSRF).
-     * Set to true only when every URL passed in is trusted, for example for intranet feeds.
-     */
-    public static bool $allowPrivateNetworks = false;
-
     /** Root namespaces accepted for a <feed>: Atom 1.0, Atom 0.3 and none. */
     private const ATOM_NAMESPACES = [self::ATOM_NAMESPACE, self::ATOM03_NAMESPACE, ''];
 
@@ -49,7 +42,7 @@ class RssParser
         'credential', 'cookie', 'sessid', 'sessionid', 'sessionkey', 'authkey', 'authcode',
     ];
 
-    /** Address ranges refused unless $allowPrivateNetworks is set. */
+    /** Address ranges refused unless a URL method is called with $allowPrivateNetworks = true. */
     private const BLOCKED_RANGES = [
         // IPv4
         '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12',
@@ -66,33 +59,48 @@ class RssParser
     /** File extensions accepted as images for enclosures that don't declare a type. */
     private const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg', 'bmp'];
 
+    /** HTML elements whose text is set apart from the text around them when markup becomes plain text. */
+    private const BLOCK_ELEMENTS = [
+        'address', 'article', 'aside', 'blockquote', 'br', 'dd', 'div', 'dl', 'dt', 'figcaption', 'figure',
+        'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'li', 'main', 'nav', 'ol', 'p', 'pre',
+        'section', 'table', 'td', 'th', 'tr', 'ul',
+    ];
+
     /**
      * Fetches a feed over http(s) and detects whether it is Atom or RSS.
      *
+     * By default, URLs that point at private, loopback, link-local or otherwise reserved addresses
+     * are refused and proxies are not used, so URLs from user input can't reach internal services
+     * (SSRF). Pass $allowPrivateNetworks = true only when the URL is trusted, for example for
+     * intranet feeds or when the server can only reach the internet through a proxy.
+     *
      * @param string $url
+     * @param bool $allowPrivateNetworks turns off the address check and allows proxies, for this call only
      * @return FeedObject
      */
-    public static function getFeed(string $url): FeedObject
+    public static function getFeed(string $url, bool $allowPrivateNetworks = false): FeedObject
     {
-        return self::_parseUrl($url, [self::class, '_buildFeed']);
+        return self::_parseUrl($url, $allowPrivateNetworks, [self::class, '_buildFeed']);
     }
 
     /**
      * @param string $url an http(s) URL
+     * @param bool $allowPrivateNetworks see getFeed()
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
      */
-    public static function getAtomFeedByUrl(string $url): FeedObject
+    public static function getAtomFeedByUrl(string $url, bool $allowPrivateNetworks = false): FeedObject
     {
-        return self::_parseUrl($url, [self::class, '_buildAtomFeed']);
+        return self::_parseUrl($url, $allowPrivateNetworks, [self::class, '_buildAtomFeed']);
     }
 
     /**
      * @param string $url an http(s) URL
+     * @param bool $allowPrivateNetworks see getFeed()
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
      */
-    public static function getRSSFeedByUrl(string $url): FeedObject
+    public static function getRSSFeedByUrl(string $url, bool $allowPrivateNetworks = false): FeedObject
     {
-        return self::_parseUrl($url, [self::class, '_buildRSSFeed']);
+        return self::_parseUrl($url, $allowPrivateNetworks, [self::class, '_buildRSSFeed']);
     }
 
     /**
@@ -131,14 +139,15 @@ class RssParser
 
     /**
      * @param string $url
+     * @param bool $allowPrivateNetworks see getFeed()
      * @param callable $builder see _parse()
      * @return FeedObject
      */
-    private static function _parseUrl(string $url, callable $builder): FeedObject
+    private static function _parseUrl(string $url, bool $allowPrivateNetworks, callable $builder): FeedObject
     {
-        return self::_parse(function () use ($url): array {
+        return self::_parse(function () use ($url, $allowPrivateNetworks): array {
             $target = self::_prepareUrl($url);
-            return [self::_fetch($target), $url, $target['safeUrl']];
+            return [self::_fetch($target, $allowPrivateNetworks), $url, $target['safeUrl']];
         }, $builder);
     }
 
@@ -383,13 +392,10 @@ class RssParser
             }
         }
 
-        foreach (self::BLOCKED_RANGES as $range) {
-            [$network, $bits] = explode('/', $range);
-            $networkBinary = inet_pton($network);
+        foreach (self::_blockedRanges() as [$networkBinary, $bits]) {
             if (strlen($networkBinary) !== strlen($binary)) {
                 continue;
             }
-            $bits = (int) $bits;
             $fullBytes = intdiv($bits, 8);
             if (strncmp($binary, $networkBinary, $fullBytes) !== 0) {
                 continue;
@@ -404,6 +410,66 @@ class RssParser
             }
         }
         return false;
+    }
+
+    /**
+     * The address list for a CURLOPT_RESOLVE entry. Several addresses, so cURL can fall back to the next
+     * one when one is down, need libcurl 7.59; IPv6 addresses in brackets need 7.57. Older libcurl
+     * gets a single address, IPv4 when there is one.
+     *
+     * @param string[] $addresses checked addresses, at least one
+     * @return string
+     * @throws \RuntimeException when this libcurl can't pin any of the addresses
+     */
+    private static function _pinList(array $addresses): string
+    {
+        $version = curl_version()['version'];
+        if (version_compare($version, '7.59.0', '<')) {
+            $ipv4 = array_values(array_filter($addresses, fn(string $address) => strpos($address, ':') === false));
+            if ($ipv4 !== []) {
+                $addresses = [$ipv4[0]];
+            } elseif (version_compare($version, '7.57.0', '<')) {
+                throw new \RuntimeException("libcurl {$version} can't pin IPv6 addresses; IPv6-only hosts need libcurl 7.57 or newer");
+            } else {
+                $addresses = [$addresses[0]];
+            }
+        }
+        return implode(',', array_map(fn(string $address) => strpos($address, ':') !== false ? "[{$address}]" : $address, $addresses));
+    }
+
+    /**
+     * @param string $address
+     * @param string[] $addresses
+     * @return bool whether $address is one of $addresses, comparing IPv6 addresses whatever their notation
+     */
+    private static function _isOneOf(string $address, array $addresses): bool
+    {
+        $binary = @inet_pton($address);
+        if ($binary === false) {
+            return false;
+        }
+        foreach ($addresses as $candidate) {
+            if (@inet_pton($candidate) === $binary) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return array<array{0: string, 1: int}> BLOCKED_RANGES as [binary network address, prefix length], parsed once
+     */
+    private static function _blockedRanges(): array
+    {
+        static $ranges = NULL;
+        if ($ranges === NULL) {
+            $ranges = [];
+            foreach (self::BLOCKED_RANGES as $range) {
+                [$network, $bits] = explode('/', $range);
+                $ranges[] = [(string) inet_pton($network), (int) $bits];
+            }
+        }
+        return $ranges;
     }
 
     /**
@@ -440,29 +506,41 @@ class RssParser
      * TIMEOUT covers all requests together, not each one.
      *
      * @param array{url: string, safeUrl: string, host: string, port: int, isIp: bool} $target from _prepareUrl()
+     * @param bool $allowPrivateNetworks see getFeed()
      * @return string
      * @throws \RuntimeException when the request fails or doesn't return a 2xx response with a body
      */
-    private static function _fetch(array $target): string
+    private static function _fetch(array $target, bool $allowPrivateNetworks): string
     {
         $deadline = microtime(true) + self::TIMEOUT;
-        for ($redirects = 0; ; $redirects++) {
-            [$status, $data, $location] = self::_request($target, $deadline);
+        $startUrl = $target['safeUrl'];
+        $redirected = false;
+        try {
+            for ($redirects = 0; ; $redirects++) {
+                [$status, $data, $location] = self::_request($target, $allowPrivateNetworks, $deadline);
 
-            if ($status >= 300 && $status < 400 && $location !== '') {
-                if ($redirects >= self::MAX_REDIRECTS) {
-                    throw new \RuntimeException("Too many redirects for {$target['safeUrl']}");
+                if ($status >= 300 && $status < 400 && $location !== '') {
+                    if ($redirects >= self::MAX_REDIRECTS) {
+                        throw new \RuntimeException("Too many redirects for {$target['safeUrl']}");
+                    }
+                    $redirected = true;
+                    $target = self::_prepareUrl($location);
+                    continue;
                 }
-                $target = self::_prepareUrl($location);
-                continue;
+                if ($status < 200 || $status >= 300) {
+                    throw new \RuntimeException("HTTP {$status} for {$target['safeUrl']}");
+                }
+                if ($data === '') {
+                    throw new \RuntimeException("Empty response (HTTP {$status}) for {$target['safeUrl']}");
+                }
+                return $data;
             }
-            if ($status < 200 || $status >= 300) {
-                throw new \RuntimeException("HTTP {$status} for {$target['safeUrl']}");
+        } catch (\RuntimeException $e) {
+            if (!$redirected) {
+                throw $e;
             }
-            if ($data === '') {
-                throw new \RuntimeException("Empty response (HTTP {$status}) for {$target['safeUrl']}");
-            }
-            return $data;
+            // Without this, an invalid or blocked redirect target reads as if the caller's URL was wrong.
+            throw new \RuntimeException($e->getMessage() . " (after a redirect from {$startUrl})", 0, $e);
         }
     }
 
@@ -470,11 +548,12 @@ class RssParser
      * Makes a single request without following redirects.
      *
      * @param array{url: string, safeUrl: string, host: string, port: int, isIp: bool} $target from _prepareUrl()
+     * @param bool $allowPrivateNetworks see getFeed()
      * @param float $deadline microtime(true) by which the whole fetch must be done
      * @return array{0: int, 1: string, 2: string} status code, body, and the absolute redirect URL or ''
      * @throws \RuntimeException when the host is blocked, the time is up, the request fails or the body is too large
      */
-    private static function _request(array $target, float $deadline): array
+    private static function _request(array $target, bool $allowPrivateNetworks, float $deadline): array
     {
         $safeUrl = $target['safeUrl'];
         $options = [
@@ -482,23 +561,20 @@ class RssParser
             CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
             CURLOPT_USERAGENT       => ini_get('user_agent') ?: self::USER_AGENT,
             CURLOPT_ENCODING        => '',
-            // Needed for timeouts below one second on systems where cURL uses signals for DNS timeouts.
-            CURLOPT_NOSIGNAL        => true,
             // Stops early when the server announces a too large body; the write function
             // below enforces the limit on the decompressed body.
             CURLOPT_MAXFILESIZE     => self::MAX_RESPONSE_SIZE,
         ];
 
-        if (!self::$allowPrivateNetworks) {
+        $checkedAddresses = NULL;
+        if (!$allowPrivateNetworks) {
             // A proxy would resolve and connect to the host itself, out of reach of the address check,
             // so connect directly. Proxies (also from http_proxy and similar) need $allowPrivateNetworks.
             $options[CURLOPT_PROXY] = '';
-            $addresses = self::_resolvePublicAddresses($target['host']);
+            $checkedAddresses = self::_resolvePublicAddresses($target['host']);
             // Connect only to the checked addresses, so DNS can't point the host elsewhere after the check.
-            // All of them, so cURL can still fall back to the next one when one is down.
             if (!$target['isIp']) {
-                $pinned = array_map(fn(string $address) => strpos($address, ':') !== false ? "[{$address}]" : $address, $addresses);
-                $options[CURLOPT_RESOLVE] = ["{$target['host']}:{$target['port']}:" . implode(',', $pinned)];
+                $options[CURLOPT_RESOLVE] = ["{$target['host']}:{$target['port']}:" . self::_pinList($checkedAddresses)];
             }
         }
 
@@ -506,8 +582,20 @@ class RssParser
         if ($remainingMs <= 0) {
             throw new \RuntimeException("Timed out after " . self::TIMEOUT . " seconds fetching {$safeUrl}");
         }
-        $options[CURLOPT_TIMEOUT_MS] = $remainingMs;
-        $options[CURLOPT_CONNECTTIMEOUT_MS] = min(self::CONNECT_TIMEOUT * 1000, $remainingMs);
+        // cURL only looks up host names itself with $allowPrivateNetworks; otherwise it connects to an
+        // address given above. Without an asynchronous resolver, cURL times its own lookups out with
+        // signals, so keep signals on then and give whole seconds (signal timeouts below a second fire
+        // at once). In every other case turn signals off, which millisecond timeouts need.
+        $asyncDns = (curl_version()['features'] & CURL_VERSION_ASYNCHDNS) !== 0;
+        if ($allowPrivateNetworks && !$asyncDns) {
+            $remainingSeconds = (int) ceil($remainingMs / 1000);
+            $options[CURLOPT_TIMEOUT] = $remainingSeconds;
+            $options[CURLOPT_CONNECTTIMEOUT] = min(self::CONNECT_TIMEOUT, $remainingSeconds);
+        } else {
+            $options[CURLOPT_NOSIGNAL] = true;
+            $options[CURLOPT_TIMEOUT_MS] = $remainingMs;
+            $options[CURLOPT_CONNECTTIMEOUT_MS] = min(self::CONNECT_TIMEOUT * 1000, $remainingMs);
+        }
 
         $body = '';
         $tooLarge = false;
@@ -532,6 +620,14 @@ class RssParser
         }
         if ($result === false) {
             throw new \RuntimeException("cURL error for {$safeUrl}: " . curl_error($cUrl));
+        }
+        // Second line of defence for the pin above: refuse the response unless cURL really connected
+        // to an address that was checked, whatever this libcurl did with CURLOPT_RESOLVE.
+        if ($checkedAddresses !== NULL) {
+            $connectedTo = (string) curl_getinfo($cUrl, CURLINFO_PRIMARY_IP);
+            if (!self::_isOneOf($connectedTo, $checkedAddresses)) {
+                throw new \RuntimeException("Refusing the response from {$safeUrl}: cURL connected to {$connectedTo}, which was not checked");
+            }
         }
 
         return [
@@ -627,6 +723,63 @@ class RssParser
     }
 
     /**
+     * Works out what an Atom text construct holds, for _atomText() and _atomPlainText().
+     *
+     * @param \SimpleXMLElement $element
+     * @param string $ns the namespace of the feed
+     * @return array{0: \DOMElement|null, 1: string, 2: bool} [the element whose children are inline markup
+     *         (the type="xhtml" div, or an Atom 0.3 mode="xml" element with child elements) or NULL;
+     *         otherwise the text; and whether that text is escaped HTML]
+     */
+    private static function _atomTextParts(\SimpleXMLElement $element, string $ns): array
+    {
+        $attributes = $element->attributes();
+        $type = (string) $attributes['type'];
+        $dom = dom_import_simplexml($element);
+
+        if ($type === 'xhtml') {
+            foreach ($dom->childNodes as $child) {
+                if ($child instanceof \DOMElement && $child->namespaceURI === self::XHTML_NAMESPACE && $child->localName === 'div') {
+                    return [$child, '', false];
+                }
+            }
+            return [NULL, trim((string) $element), false];
+        }
+
+        if ($ns === self::ATOM03_NAMESPACE) {
+            // Atom 0.3 marks HTML with a MIME type, and mode="xml" is the default.
+            $isHtml = $type === 'text/html' || $type === 'application/xhtml+xml';
+            $mode = (string) $attributes['mode'] ?: 'xml';
+            if ($mode === 'base64') {
+                $decoded = base64_decode((string) $element, true);
+                return [NULL, $decoded === false ? '' : $decoded, $isHtml];
+            }
+            // Plain text in mode="xml" has no child elements and stays text. (SimpleXML's count()
+            // can't tell: on $entry->content it counts the <content> elements, not their children.)
+            if ($mode === 'xml' && self::_hasChildElements($dom)) {
+                return [$dom, '', false];
+            }
+            return [NULL, (string) $element, $isHtml];
+        }
+
+        return [NULL, (string) $element, $type === 'html'];
+    }
+
+    /**
+     * @param \DOMElement $element
+     * @return bool whether the element has at least one child element, not only text
+     */
+    private static function _hasChildElements(\DOMElement $element): bool
+    {
+        foreach ($element->childNodes as $child) {
+            if ($child instanceof \DOMElement) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Text of an Atom text construct. Inline markup is returned as HTML: Atom 1.0 type="xhtml",
      * and Atom 0.3 mode="xml", which is the default mode in Atom 0.3. Atom 0.3 mode="base64" is decoded.
      * The result is untrusted feed content: it is not sanitized, like every other text and HTML field.
@@ -638,37 +791,15 @@ class RssParser
      */
     private static function _atomText(\SimpleXMLElement $element, string $ns): string
     {
-        $attributes = $element->attributes();
-        $dom = dom_import_simplexml($element);
-
-        if ((string) $attributes['type'] === 'xhtml') {
-            foreach ($dom->childNodes as $child) {
-                if ($child instanceof \DOMElement && $child->namespaceURI === self::XHTML_NAMESPACE && $child->localName === 'div') {
-                    return self::_innerHtml($child);
-                }
-            }
-            return trim((string) $element);
-        }
-
-        if ($ns === self::ATOM03_NAMESPACE) {
-            $mode = (string) $attributes['mode'] ?: 'xml';
-            if ($mode === 'base64') {
-                $decoded = base64_decode((string) $element, true);
-                return $decoded === false ? '' : $decoded;
-            }
-            // Plain text in mode="xml" has no child elements and is returned as text, not escaped HTML.
-            if ($mode === 'xml' && $element->count() > 0) {
-                return self::_innerHtml($dom);
-            }
-        }
-
-        return (string) $element;
+        [$markup, $text] = self::_atomTextParts($element, $ns);
+        return $markup !== NULL ? self::_innerHtml($markup) : $text;
     }
 
     /**
      * Text of an Atom text construct as plain text, for fields that never hold markup, like titles.
-     * Markup (Atom 1.0 type="html" or "xhtml", Atom 0.3 HTML types and inline XML) is reduced to its text,
-     * and whitespace runs become single spaces. The result is untrusted text: escape it for HTML output.
+     * Markup (Atom 1.0 type="html" or "xhtml", Atom 0.3 HTML types and inline XML) is reduced to its text
+     * the same way for every kind (see _nodeText()), and whitespace runs become single spaces.
+     * The result is untrusted text: escape it for HTML output.
      *
      * @param \SimpleXMLElement $element
      * @param string $ns the namespace of the feed
@@ -676,37 +807,18 @@ class RssParser
      */
     private static function _atomPlainText(\SimpleXMLElement $element, string $ns): string
     {
-        $attributes = $element->attributes();
-        $type = (string) $attributes['type'];
-        $dom = dom_import_simplexml($element);
-
-        if ($type === 'xhtml') {
-            foreach ($dom->childNodes as $child) {
-                if ($child instanceof \DOMElement && $child->namespaceURI === self::XHTML_NAMESPACE && $child->localName === 'div') {
-                    return self::_collapseWhitespace($child->textContent);
-                }
-            }
-            return self::_collapseWhitespace((string) $element);
+        [$markup, $text, $isHtml] = self::_atomTextParts($element, $ns);
+        if ($markup !== NULL) {
+            $text = self::_nodeText($markup);
+        } elseif ($isHtml) {
+            $text = self::_htmlToText($text);
         }
-
-        if ($ns === self::ATOM03_NAMESPACE) {
-            $mode = (string) $attributes['mode'] ?: 'xml';
-            if ($mode === 'xml' && $element->count() > 0) {
-                return self::_collapseWhitespace($dom->textContent);
-            }
-            $text = $mode === 'base64' ? (string) base64_decode((string) $element, true) : (string) $element;
-            $isHtml = $type === 'text/html' || $type === 'application/xhtml+xml';
-        } else {
-            $text = (string) $element;
-            $isHtml = $type === 'html';
-        }
-
-        return self::_collapseWhitespace($isHtml ? self::_htmlToText($text) : $text);
+        return self::_collapseWhitespace($text);
     }
 
     /**
      * @param string $html an HTML fragment
-     * @return string its text, without the contents of <script> and <style>
+     * @return string its text, see _nodeText()
      */
     private static function _htmlToText(string $html): string
     {
@@ -717,27 +829,52 @@ class RssParser
         libxml_clear_errors();
         libxml_use_internal_errors($useInternalErrors);
 
-        if (!$loaded || $doc->documentElement === NULL) {
-            return strip_tags($html);
+        $body = $loaded ? $doc->getElementsByTagName('body')->item(0) : NULL;
+        return $body !== NULL ? self::_nodeText($body) : strip_tags($html);
+    }
+
+    /**
+     * The text of a node the way a browser shows it: without the contents of <script> and <style>,
+     * and with a line break around block elements and <br>, so "Part 1</p><p>Part 2" doesn't become
+     * "Part 1Part 2". Elements are matched by local name, so prefixed XHTML (<h:p>) works too.
+     *
+     * @param \DOMNode $node
+     * @return string
+     */
+    private static function _nodeText(\DOMNode $node): string
+    {
+        // Includes CDATA sections, which extend DOMText.
+        if ($node instanceof \DOMText) {
+            return $node->data;
         }
-        foreach (['script', 'style'] as $tagName) {
-            $elements = $doc->getElementsByTagName($tagName);
-            // Live list: remove from the end so the indexes of the rest don't shift.
-            for ($i = $elements->length - 1; $i >= 0; $i--) {
-                $element = $elements->item($i);
-                $element->parentNode->removeChild($element);
-            }
+        if (!$node instanceof \DOMElement) {
+            return '';
         }
-        return $doc->documentElement->textContent;
+
+        $name = strtolower($node->localName);
+        if ($name === 'script' || $name === 'style') {
+            return '';
+        }
+        $text = '';
+        foreach ($node->childNodes as $child) {
+            $text .= self::_nodeText($child);
+        }
+        return in_array($name, self::BLOCK_ELEMENTS, true) ? "\n{$text}\n" : $text;
     }
 
     /**
      * @param string $text
-     * @return string the text trimmed, with every run of whitespace replaced by one space
+     * @return string the text trimmed, with every run of whitespace, including Unicode spaces such as the
+     *                non-breaking space from &nbsp;, replaced by one space
      */
     private static function _collapseWhitespace(string $text): string
     {
-        return trim((string) preg_replace('~[ \t\r\n]+~', ' ', $text));
+        $collapsed = preg_replace('~[\s\p{Z}\x{200B}\x{FEFF}]+~u', ' ', $text);
+        if ($collapsed === NULL) {
+            // Not valid UTF-8, which the Unicode pattern needs: collapse ASCII whitespace only.
+            $collapsed = (string) preg_replace('~[ \t\r\n]+~', ' ', $text);
+        }
+        return trim($collapsed);
     }
 
     /**

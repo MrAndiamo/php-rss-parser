@@ -7,6 +7,11 @@
             "Timvandendries\\PhpRssParser\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Timvandendries\\PhpRssParser\\Tests\\": "tests/"
+        }
+    },
     "authors": [
         {
             "name": "Tim van den Dries",
@@ -14,12 +19,21 @@
         }
     ],
     "minimum-stability": "dev",
+    "prefer-stable": true,
     "require": {
+        "php": ">=7.4",
         "ext-curl": "*",
         "ext-dom": "*",
         "ext-simplexml": "*"
     },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6 || ^10.5 || ^11.5"
+    },
     "suggest": {
         "ext-intl": "Needed to fetch feeds from internationalized domain names, such as bücher.de"
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test-network": "phpunit --group network"
     }
 }

@@ -2,3 +2,5 @@ vendor/
 private-key-thuis
 private-key-thuis.pub
 CHANGELOG.md
+.phpunit.result.cache
+.phpunit.cache/

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+    <channel>
+        <title>RSS feed</title>
+        <link>https://example.org/</link>
+        <description>An RSS feed</description>
+        <language>nl</language>
+        <lastBuildDate>Wed, 01 Oct 2026 12:00:00 GMT</lastBuildDate>
+        <item>
+            <title>Item with link</title>
+            <link>https://example.org/i1</link>
+            <pubDate>Wed, 01 Oct 2026 10:00:00 GMT</pubDate>
+            <enclosure url="https://example.org/i1.jpg" type="image/jpeg"/>
+        </item>
+        <item>
+            <title>Item with permalink guid</title>
+            <guid>https://example.org/guid</guid>
+        </item>
+        <item>
+            <title>Item with guid marked not permalink</title>
+            <guid isPermaLink="false">https://example.org/not-a-permalink</guid>
+        </item>
+        <item>
+            <title>Item with plain id guid</title>
+            <guid>12345</guid>
+        </item>
+    </channel>
+</rss>
