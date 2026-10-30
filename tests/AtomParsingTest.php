@@ -123,6 +123,66 @@ final class AtomParsingTest extends TestCase
         self::assertStringContainsString('has a <feed> root in namespace urn:other', (string) $feed->error);
     }
 
+    public function testElementsWithUndeclaredPrefixesKeepTheirNames(): void
+    {
+        $feed = RssParser::getFeedFromFile(self::fixturePath('atom-undeclared-prefix.xml'));
+
+        self::assertNull($feed->error, '"1a" after the colon is no valid element name on its own');
+        self::assertSame('a<x:1a>b</x:1a><o:p>c</o:p>', self::items($feed)[0]->content, 'not renamed to <1a> and <p>');
+    }
+
+    public function testForeignNamespaceElementsDontBecomeLiveHtml(): void
+    {
+        $feed = RssParser::getFeedFromFile(self::fixturePath('atom-foreign-namespace.xml'));
+
+        self::assertNull($feed->error);
+        // <foo:style> and <x:script> have the local names "style" and "script", but come from other
+        // namespaces: only their text is kept. SVG is still recreated as inline <svg>.
+        self::assertSame('Price10 EURalert(1)<svg><circle r="1"></circle></svg>', self::items($feed)[0]->content);
+    }
+
+    public function testEmptyForeignElementAddsNothing(): void
+    {
+        // An unwrapped empty foreign element must add no node at all; appending an empty
+        // DocumentFragment instead would raise a PHP warning (fatal under failOnWarning).
+        $feed = RssParser::getFeedFromFile(self::fixturePath('atom-foreign-namespace.xml'));
+
+        self::assertSame('bc', self::items($feed)[1]->content);
+    }
+
+    public function testAtomNamespaceIsNotHtmlInAtom10Content(): void
+    {
+        // Only Atom 0.3 inline content inherits its Atom namespace as HTML; in Atom 1.0 xhtml content an
+        // Atom-namespaced <a:script> is foreign and must not become a live <script>.
+        $feed = RssParser::getFeedFromFile(self::fixturePath('atom-foreign-namespace.xml'));
+
+        self::assertSame('Aalert(1)', self::items($feed)[2]->content);
+    }
+
+    public function testSvgAndMathmlOutsideTheirRootAreForeign(): void
+    {
+        // A loose SVG <s:script> or MathML <m:style> would become a live HTML <script> or <style>; only
+        // inside <svg> or <math> (through SVG or MathML ancestors only) do they keep their name.
+        $feed = RssParser::getFeedFromFile(self::fixturePath('atom-foreign-namespace.xml'));
+
+        self::assertSame(
+            'Aalert(1)body{}x()<svg><g><script>y()</script></g></svg>',
+            self::items($feed)[3]->content,
+        );
+    }
+
+    public function testTextConstructThatIsNotAnElementIsABug(): void
+    {
+        $xml = simplexml_load_string('<title type="html">x</title>');
+        self::assertNotFalse($xml);
+        $attribute = $xml->attributes()['type'] ?? null;
+        self::assertNotNull($attribute, 'an attribute node, which dom_import_simplexml() turns into a DOMAttr');
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('_atomTextParts() needs an element, got DOMAttr');
+        self::callPrivate('_atomTextParts', $attribute, '');
+    }
+
     public function testAtomMethodRefusesRss(): void
     {
         $feed = RssParser::getAtomFeedByUrl(self::serverUrl('/feeds/rss.xml'), true);

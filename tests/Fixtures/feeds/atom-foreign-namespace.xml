@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <title>Foreign namespaces in content</title>
+    <entry>
+        <title>Foreign style and script</title>
+        <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">Price<foo:style xmlns:foo="urn:x">10 EUR</foo:style><x:script xmlns:x="urn:y">alert(1)</x:script><s:svg xmlns:s="http://www.w3.org/2000/svg"><s:circle r="1"/></s:svg></div></content>
+    </entry>
+    <entry>
+        <title>Empty foreign element</title>
+        <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">b<x:br xmlns:x="urn:x"/>c</div></content>
+    </entry>
+    <entry>
+        <title>Atom-namespaced script in Atom 1.0 xhtml content</title>
+        <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">A<a:script xmlns:a="http://www.w3.org/2005/Atom">alert(1)</a:script></div></content>
+    </entry>
+    <entry>
+        <title>SVG and MathML outside their root</title>
+        <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml" xmlns:s="http://www.w3.org/2000/svg" xmlns:m="http://www.w3.org/1998/Math/MathML">A<s:script>alert(1)</s:script><m:style>body{}</m:style><s:g><s:script>x()</s:script></s:g><s:svg><s:g><s:script>y()</s:script></s:g></s:svg></div></content>
+    </entry>
+</feed>

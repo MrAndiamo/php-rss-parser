@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
     <title type="html">Feed &amp;amp; &lt;em&gt;Co&lt;/em&gt;&lt;script&gt;x()&lt;/script&gt;</title>
-    <entry><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">My
+    <entry><id>xhtml</id><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">My
         <b>Post</b></div></title></entry>
-    <entry><title>&lt;script&gt;alert(1)&lt;/script&gt;</title></entry>
-    <entry><title type="html">caf&amp;eacute; 日本</title></entry>
-    <entry><title type="html">Breaking&lt;br&gt;News</title></entry>
-    <entry><title type="html">&lt;p&gt;Part 1&lt;/p&gt;&lt;p&gt;Part 2&lt;/p&gt;</title></entry>
-    <entry><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">Hello<style>p{color:red}</style><script>x()</script></div></title></entry>
-    <entry><title type="html">&amp;nbsp;Title&amp;nbsp;&amp;nbsp;Text&amp;nbsp;</title></entry>
+    <entry><id>text</id><title>&lt;script&gt;alert(1)&lt;/script&gt;</title></entry>
+    <entry><id>entities</id><title type="html">caf&amp;eacute; 日本</title></entry>
+    <entry><id>br</id><title type="html">Breaking&lt;br&gt;News</title></entry>
+    <entry><id>paragraphs</id><title type="html">&lt;p&gt;Part 1&lt;/p&gt;&lt;p&gt;Part 2&lt;/p&gt;</title></entry>
+    <entry><id>xhtml-script-style</id><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">Hello<style>p{color:red}</style><script>x()</script></div></title></entry>
+    <entry><id>nbsp</id><title type="html">&amp;nbsp;Title&amp;nbsp;&amp;nbsp;Text&amp;nbsp;</title></entry>
+    <entry><id>xhtml-undeclared-prefix</id><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">Price<foo:style>10 EUR</foo:style></div></title></entry>
+    <entry><id>html-prefixed-style</id><title type="html">Price&lt;foo:style&gt;10 EUR&lt;/foo:style&gt;&lt;x:script&gt;!&lt;/x:script&gt;</title></entry>
+    <entry><id>xhtml-declared-foreign-style</id><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">Price<foo:style xmlns:foo="urn:x">10 EUR</foo:style></div></title></entry>
+    <entry><id>xhtml-svg-style</id><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">T<s:svg xmlns:s="http://www.w3.org/2000/svg"><s:style>c{fill:red}</s:style></s:svg></div></title></entry>
+    <entry><id>xhtml-foreign-block</id><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">A<x:p xmlns:x="urn:x">B</x:p>C</div></title></entry>
+    <entry><id>xhtml-word-paragraph</id><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">A<o:p>B</o:p>C</div></title></entry>
+    <entry><id>html-word-paragraph</id><title type="html">A&lt;o:p&gt;B&lt;/o:p&gt;C</title></entry>
+    <entry><id>html-two-colons</id><title type="html">A&lt;a:b:p&gt;B&lt;/a:b:p&gt;C</title></entry>
+    <entry><id>xhtml-declared-prefix-block</id><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml" xmlns:h="http://www.w3.org/1999/xhtml">A<h:p>B</h:p></div></title></entry>
+    <entry><id>prefixed-html</id><title type="html">&lt;h:p&gt;A&lt;/h:p&gt;&lt;o:p&gt;B&lt;/o:p&gt;</title></entry>
 </feed>

@@ -1,0 +1,3 @@
+# Check out text files with LF line endings on every platform, whatever core.autocrlf says,
+# because Pint's PSR-12 style requires LF. Git detects binary files itself and leaves them alone.
+* text=auto eol=lf

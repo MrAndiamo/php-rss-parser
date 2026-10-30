@@ -18,7 +18,7 @@
             "email": "vamos1982@gmail.com"
         }
     ],
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true,
     "require": {
         "php": "~8.4.27 || ^8.5.12",

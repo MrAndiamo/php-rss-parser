@@ -13,6 +13,14 @@ class RssParser
     public const ATOM03_NAMESPACE = 'http://purl.org/atom/ns#';
     public const RSS1_NAMESPACE = 'http://purl.org/rss/1.0/';
     public const XHTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
+    public const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+    public const MATHML_NAMESPACE = 'http://www.w3.org/1998/Math/MathML';
+
+    /**
+     * Namespaces of foreign elements that browsers render inline in HTML by their bare name, with the
+     * root element they only work inside: an SVG <script> outside an <svg> would be an HTML <script>.
+     */
+    private const INLINE_FOREIGN_ROOTS = [self::SVG_NAMESPACE => 'svg', self::MATHML_NAMESPACE => 'math'];
 
     public const CONNECT_TIMEOUT = 10;
     public const TIMEOUT = 30;
@@ -73,9 +81,16 @@ class RssParser
      * (SSRF). Pass $allowPrivateNetworks = true only when the URL is trusted, for example for
      * intranet feeds or when the server can only reach the internet through a proxy.
      *
+     * Problems with the feed or its URL (unreachable, HTTP errors, invalid XML, not a feed) are
+     * reported in FeedObject::$error, not thrown. The same holds for every get* method. Anything that
+     * does escape means a bug, in this library or in PHP: a LogicException from this library's own
+     * checks, or an unexpected PHP Error such as a TypeError. Those are not caught on purpose, so a
+     * bug is noticed instead of passing as a broken feed.
+     *
      * @param string $url
      * @param bool $allowPrivateNetworks turns off the address check and allows proxies, for this call only
      * @return FeedObject
+     * @throws \LogicException for a bug in this library, never because of the feed
      */
     public static function getFeed(string $url, bool $allowPrivateNetworks = false): FeedObject
     {
@@ -86,6 +101,7 @@ class RssParser
      * @param string $url an http(s) URL
      * @param bool $allowPrivateNetworks see getFeed()
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
+     * @throws \LogicException for a bug in this library; see getFeed() for what is and isn't thrown
      */
     public static function getAtomFeedByUrl(string $url, bool $allowPrivateNetworks = false): FeedObject
     {
@@ -96,6 +112,7 @@ class RssParser
      * @param string $url an http(s) URL
      * @param bool $allowPrivateNetworks see getFeed()
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
+     * @throws \LogicException for a bug in this library; see getFeed() for what is and isn't thrown
      */
     public static function getRSSFeedByUrl(string $url, bool $allowPrivateNetworks = false): FeedObject
     {
@@ -108,6 +125,7 @@ class RssParser
      *
      * @param string $path a filesystem path, not a URL
      * @return FeedObject
+     * @throws \LogicException for a bug in this library; see getFeed() for what is and isn't thrown
      */
     public static function getFeedFromFile(string $path): FeedObject
     {
@@ -119,6 +137,7 @@ class RssParser
      *
      * @param string $path a filesystem path, not a URL
      * @return FeedObject
+     * @throws \LogicException for a bug in this library; see getFeed() for what is and isn't thrown
      */
     public static function getAtomFeedFromFile(string $path): FeedObject
     {
@@ -130,6 +149,7 @@ class RssParser
      *
      * @param string $path a filesystem path, not a URL
      * @return FeedObject
+     * @throws \LogicException for a bug in this library; see getFeed() for what is and isn't thrown
      */
     public static function getRSSFeedFromFile(string $path): FeedObject
     {
@@ -413,12 +433,16 @@ class RssParser
     }
 
     /**
-     * @return array{version: string, features: int} the libcurl version and its feature bitmask
+     * The libcurl version and feature bitmask, read once per process: they can't change while PHP runs,
+     * so every request and redirect hop after the first reuses them. Tests that need another version
+     * pass it to _pinList() directly instead of changing this.
+     *
+     * @return array{version: string, features: int}
      * @throws \RuntimeException when PHP can't report them
      */
     private static function _curlInfo(): array
     {
-        /** @var array{version: string, features: int}|null $curlInfo the values can't change while PHP runs */
+        /** @var array{version: string, features: int}|null $curlInfo */
         static $curlInfo = null;
         if ($curlInfo === null) {
             $info = curl_version();
@@ -436,17 +460,31 @@ class RssParser
      * gets a single address, IPv4 when there is one.
      *
      * @param string[] $addresses checked addresses, at least one
+     * @param string $version the libcurl version, as _curlInfo() gives it
      * @return string
      * @throws \RuntimeException when this libcurl can't pin any of the addresses
      */
-    private static function _pinList(array $addresses): string
+    private static function _pinList(array $addresses, string $version): string
     {
-        $version = self::_curlInfo()['version'];
-        if (version_compare($version, '7.59.0', '<')) {
+        // Pinning is the only place the version matters, so it is checked here, not for every request:
+        // refuse one that version_compare() can't read rather than let it compare as older than every
+        // release and quietly change how hosts are pinned.
+        if (preg_match('~^(\d+\.\d+)(\.\d+)?(.*)$~s', $version, $match) !== 1) {
+            throw new \RuntimeException("libcurl reports a version this library can't read: '{$version}'");
+        }
+        // A release reported without patch number ("7.59") is compared as ".0": version_compare() would
+        // otherwise put it before "7.59.0". A copy, so messages show what libcurl reports.
+        // Any suffix ("7.59.0-DEV", or a daily snapshot's "7.59.0-20180305") makes it a build from before
+        // that release, compared as "-dev": version_compare() would put a numeric suffix after "7.59.0".
+        // That fails safe, because a snapshot may predate the feature; if it ignored a pin it can't
+        // parse, cURL would resolve the host itself and DNS could point it at an unchecked address.
+        // One pinned IPv4 address costs only failover.
+        $comparable = $match[1] . ($match[2] !== '' ? $match[2] : '.0') . ($match[3] !== '' ? '-dev' : '');
+        if (version_compare($comparable, '7.59.0', '<')) {
             $ipv4 = array_values(array_filter($addresses, fn (string $address) => strpos($address, ':') === false));
             if ($ipv4 !== []) {
                 $addresses = [$ipv4[0]];
-            } elseif (version_compare($version, '7.57.0', '<')) {
+            } elseif (version_compare($comparable, '7.57.0', '<')) {
                 throw new \RuntimeException("libcurl {$version} can't pin IPv6 addresses; IPv6-only hosts need libcurl 7.57 or newer");
             } else {
                 $addresses = [$addresses[0]];
@@ -564,6 +602,59 @@ class RssParser
     }
 
     /**
+     * The cURL options that decide where and for how long a request may connect: proxy, pinned
+     * addresses and timeouts. The libcurl info comes from _curlInfo(), which reads it once per process.
+     *
+     * @param array{url: string, safeUrl: string, host: string, port: int, isIp: bool} $target from _prepareUrl()
+     * @param bool $allowPrivateNetworks see getFeed()
+     * @param array<string> $checkedAddresses the addresses that passed the check; empty with $allowPrivateNetworks
+     * @param int $remainingMs time left for the whole fetch
+     * @return array<int, mixed>
+     * @throws \RuntimeException when no time is left, or this libcurl can't pin the addresses or report its version
+     * @throws \LogicException when the address check is on but no checked addresses are given
+     */
+    private static function _connectionOptions(array $target, bool $allowPrivateNetworks, array $checkedAddresses, int $remainingMs): array
+    {
+        if (!$allowPrivateNetworks && $checkedAddresses === []) {
+            throw new \LogicException('_connectionOptions() needs the checked addresses when private networks are not allowed');
+        }
+        // The only time check, here where the timeouts are set: cURL reads a timeout of 0 as "no
+        // timeout", so a request without time left must not be made at all.
+        if ($remainingMs <= 0) {
+            throw new \RuntimeException("Timed out after " . self::TIMEOUT . " seconds fetching {$target['safeUrl']}");
+        }
+        $curl = self::_curlInfo();
+        $options = [];
+
+        if (!$allowPrivateNetworks) {
+            // A proxy would resolve and connect to the host itself, out of reach of the address check,
+            // so connect directly. Proxies (also from http_proxy and similar) need $allowPrivateNetworks.
+            $options[CURLOPT_PROXY] = '';
+            // Connect only to the checked addresses, so DNS can't point the host elsewhere after the check.
+            if (!$target['isIp']) {
+                $options[CURLOPT_RESOLVE] = ["{$target['host']}:{$target['port']}:" . self::_pinList($checkedAddresses, $curl['version'])];
+            }
+        }
+
+        // cURL only looks up host names itself with $allowPrivateNetworks; otherwise it connects to an
+        // address given above. Without an asynchronous resolver, cURL times its own lookups out with
+        // signals, so keep signals on then and give whole seconds (signal timeouts below a second fire
+        // at once). In every other case turn signals off, which millisecond timeouts need.
+        $asyncDns = ($curl['features'] & CURL_VERSION_ASYNCHDNS) !== 0;
+        if ($allowPrivateNetworks && !$asyncDns) {
+            $remainingSeconds = (int) ceil($remainingMs / 1000);
+            $options[CURLOPT_TIMEOUT] = $remainingSeconds;
+            $options[CURLOPT_CONNECTTIMEOUT] = min(self::CONNECT_TIMEOUT, $remainingSeconds);
+        } else {
+            $options[CURLOPT_NOSIGNAL] = true;
+            $options[CURLOPT_TIMEOUT_MS] = $remainingMs;
+            $options[CURLOPT_CONNECTTIMEOUT_MS] = min(self::CONNECT_TIMEOUT * 1000, $remainingMs);
+        }
+
+        return $options;
+    }
+
+    /**
      * Makes a single request without following redirects.
      *
      * @param array{url: string, safeUrl: string, host: string, port: int, isIp: bool} $target from _prepareUrl()
@@ -575,6 +666,12 @@ class RssParser
     private static function _request(array $target, bool $allowPrivateNetworks, float $deadline): array
     {
         $safeUrl = $target['safeUrl'];
+        $checkedAddresses = $allowPrivateNetworks ? [] : self::_resolvePublicAddresses($target['host']);
+
+        // Measured after the DNS lookup above, which can take a while; _connectionOptions() refuses
+        // to go on when nothing is left.
+        $remainingMs = (int) (($deadline - microtime(true)) * 1000);
+
         $options = [
             CURLOPT_FOLLOWLOCATION  => false,
             CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
@@ -583,38 +680,7 @@ class RssParser
             // Stops early when the server announces a too large body; the write function
             // below enforces the limit on the decompressed body.
             CURLOPT_MAXFILESIZE     => self::MAX_RESPONSE_SIZE,
-        ];
-
-        $checkedAddresses = null;
-        if (!$allowPrivateNetworks) {
-            // A proxy would resolve and connect to the host itself, out of reach of the address check,
-            // so connect directly. Proxies (also from http_proxy and similar) need $allowPrivateNetworks.
-            $options[CURLOPT_PROXY] = '';
-            $checkedAddresses = self::_resolvePublicAddresses($target['host']);
-            // Connect only to the checked addresses, so DNS can't point the host elsewhere after the check.
-            if (!$target['isIp']) {
-                $options[CURLOPT_RESOLVE] = ["{$target['host']}:{$target['port']}:" . self::_pinList($checkedAddresses)];
-            }
-        }
-
-        $remainingMs = (int) (($deadline - microtime(true)) * 1000);
-        if ($remainingMs <= 0) {
-            throw new \RuntimeException("Timed out after " . self::TIMEOUT . " seconds fetching {$safeUrl}");
-        }
-        // cURL only looks up host names itself with $allowPrivateNetworks; otherwise it connects to an
-        // address given above. Without an asynchronous resolver, cURL times its own lookups out with
-        // signals, so keep signals on then and give whole seconds (signal timeouts below a second fire
-        // at once). In every other case turn signals off, which millisecond timeouts need.
-        $asyncDns = (self::_curlInfo()['features'] & CURL_VERSION_ASYNCHDNS) !== 0;
-        if ($allowPrivateNetworks && !$asyncDns) {
-            $remainingSeconds = (int) ceil($remainingMs / 1000);
-            $options[CURLOPT_TIMEOUT] = $remainingSeconds;
-            $options[CURLOPT_CONNECTTIMEOUT] = min(self::CONNECT_TIMEOUT, $remainingSeconds);
-        } else {
-            $options[CURLOPT_NOSIGNAL] = true;
-            $options[CURLOPT_TIMEOUT_MS] = $remainingMs;
-            $options[CURLOPT_CONNECTTIMEOUT_MS] = min(self::CONNECT_TIMEOUT * 1000, $remainingMs);
-        }
+        ] + self::_connectionOptions($target, $allowPrivateNetworks, $checkedAddresses, $remainingMs);
 
         $body = '';
         $tooLarge = false;
@@ -642,7 +708,7 @@ class RssParser
         }
         // Second line of defence for the pin above: refuse the response unless cURL really connected
         // to an address that was checked, whatever this libcurl did with CURLOPT_RESOLVE.
-        if ($checkedAddresses !== null) {
+        if (!$allowPrivateNetworks) {
             $connectedTo = (string) curl_getinfo($cUrl, CURLINFO_PRIMARY_IP);
             if (!self::_isOneOf($connectedTo, $checkedAddresses)) {
                 throw new \RuntimeException("Refusing the response from {$safeUrl}: cURL connected to {$connectedTo}, which was not checked");
@@ -749,13 +815,20 @@ class RssParser
      * @return array{0: \DOMElement|null, 1: string, 2: bool} [the element whose children are inline markup
      *         (the type="xhtml" div, or an Atom 0.3 mode="xml" element with child elements) or NULL;
      *         otherwise the text; and whether that text is escaped HTML]
+     * @throws \LogicException when $element is not an element, which is a bug in the caller
      */
     private static function _atomTextParts(\SimpleXMLElement $element, string $ns): array
     {
+        $dom = dom_import_simplexml($element);
+        // Text constructs are elements, and dom_import_simplexml() only returns a DOMAttr for attributes,
+        // so anything else is a bug in the caller, not a property of the feed. Checked at runtime (assert()
+        // is compiled out in production) and thrown as a LogicException, which _parse() doesn't turn into
+        // a feed error, instead of guessing how to read it.
+        if (!$dom instanceof \DOMElement) {
+            throw new \LogicException('_atomTextParts() needs an element, got ' . get_class($dom));
+        }
         $attributes = $element->attributes();
         $type = (string) $attributes['type'];
-        $dom = dom_import_simplexml($element);
-        assert($dom instanceof \DOMElement, 'Text constructs are elements; dom_import_simplexml() only returns a DOMAttr for attributes');
 
         if ($type === 'xhtml') {
             foreach ($dom->childNodes as $child) {
@@ -786,16 +859,51 @@ class RssParser
     }
 
     /**
+     * Whether an element in inline markup is HTML: no namespace (from loadHTML(), or an undeclared
+     * prefix), XHTML, or the namespace of the element that contains the markup. That last one is for
+     * Atom 0.3 inline content, whose elements inherit the Atom 0.3 namespace as their default. It is
+     * not the Atom namespace in general: in Atom 1.0 xhtml content, which lives in an XHTML <div>, an
+     * Atom-namespaced <a:script> is foreign. Any other declared namespace (<foo:style xmlns:foo=
+     * "urn:x">) is not HTML either, whatever the local name.
+     *
      * @param \DOMElement $element
-     * @return string the element name without namespace prefix: "p" for <h:p>
+     * @param string|null $containerNs namespace of the element that contains the markup
+     * @return bool
      */
-    private static function _localName(\DOMElement $element): string
+    private static function _isHtmlElement(\DOMElement $element, ?string $containerNs): bool
     {
-        if ($element->localName !== null) {
-            return $element->localName;
+        $ns = $element->namespaceURI;
+        return $ns === null || $ns === self::XHTML_NAMESPACE || $ns === $containerNs;
+    }
+
+    /**
+     * Whether an element in inline markup keeps its name in HTML: an HTML element (see _isHtmlElement()),
+     * or an SVG or MathML element inside its <svg> or <math> root. Only there do browsers read it as
+     * SVG or MathML; a loose <s:script xmlns:s="http://www.w3.org/2000/svg"> recreated as <script>
+     * would be a live HTML script, so it counts as foreign like any other namespace.
+     *
+     * @param \DOMElement $element
+     * @param string|null $containerNs namespace of the element that contains the markup
+     * @return bool
+     */
+    private static function _keepsElementName(\DOMElement $element, ?string $containerNs): bool
+    {
+        if (self::_isHtmlElement($element, $containerNs)) {
+            return true;
         }
-        $colon = strrpos($element->nodeName, ':');
-        return $colon === false ? $element->nodeName : substr($element->nodeName, $colon + 1);
+        $ns = $element->namespaceURI;
+        $root = self::INLINE_FOREIGN_ROOTS[$ns ?? ''] ?? null;
+        if ($root === null) {
+            return false;
+        }
+        // Walk up through elements of the same namespace to the root. A different namespace in between
+        // (an unwrapped foreign element, or the HTML around a loose SVG element) means no root.
+        for ($node = $element; $node instanceof \DOMElement && $node->namespaceURI === $ns; $node = $node->parentNode) {
+            if ($node->localName === $root) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -842,7 +950,7 @@ class RssParser
     {
         [$markup, $text, $isHtml] = self::_atomTextParts($element, $ns);
         if ($markup !== null) {
-            $text = self::_nodeText($markup);
+            $text = self::_nodeText($markup, $markup->namespaceURI);
         } elseif ($isHtml) {
             $text = self::_htmlToText($text);
         }
@@ -863,18 +971,20 @@ class RssParser
         libxml_use_internal_errors($useInternalErrors);
 
         $body = $loaded ? $doc->getElementsByTagName('body')->item(0) : null;
-        return $body !== null ? self::_nodeText($body) : strip_tags($html);
+        return $body !== null ? self::_nodeText($body, null) : strip_tags($html);
     }
 
     /**
      * The text of a node the way a browser shows it: without the contents of <script> and <style>,
      * and with a line break around block elements and <br>, so "Part 1</p><p>Part 2" doesn't become
-     * "Part 1Part 2". Elements are matched by local name, so prefixed XHTML (<h:p>) works too.
+     * "Part 1Part 2". Works the same for nodes from loadHTML() and from XML parsing, and matches
+     * what _innerHtml() makes of the same markup for content.
      *
      * @param \DOMNode $node
+     * @param string|null $containerNs namespace of the element that contains the markup (see _isHtmlElement())
      * @return string
      */
-    private static function _nodeText(\DOMNode $node): string
+    private static function _nodeText(\DOMNode $node, ?string $containerNs): string
     {
         // Includes CDATA sections, which extend DOMText.
         if ($node instanceof \DOMText) {
@@ -884,15 +994,26 @@ class RssParser
             return '';
         }
 
-        $name = strtolower(self::_localName($node));
-        if ($name === 'script' || $name === 'style') {
+        // localName is always set for elements; the cast is only there because PHP types it as ?string
+        // for all DOM nodes, including ones that have no name.
+        $name = strtolower((string) $node->localName);
+        $isHtml = self::_isHtmlElement($node, $containerNs);
+        // Script and style by their full name, and only where a browser hides them: in HTML, and in
+        // inline SVG or MathML (see _keepsElementName()). <foo:style> with an undeclared prefix, or a
+        // declared foreign <foo:style xmlns:foo="urn:x">, is an unknown element whose text a browser shows.
+        if (($name === 'script' || $name === 'style') && self::_keepsElementName($node, $containerNs)) {
             return '';
         }
         $text = '';
         foreach ($node->childNodes as $child) {
-            $text .= self::_nodeText($child);
+            $text .= self::_nodeText($child, $containerNs);
         }
-        return in_array($name, self::BLOCK_ELEMENTS, true) ? "\n{$text}\n" : $text;
+        // Only HTML elements are blocks, and by their full local name, the name _appendAsHtml() gives them
+        // in content: a declared XHTML prefix is already resolved (<h:p xmlns:h="…xhtml"> is "p"), but an
+        // undeclared one stays (Word's <o:p> is "o:p", HTML-parsed <h:p> is "h:p"). Content keeps those
+        // as unknown elements, which a browser shows inline, so they are inline here too. A foreign
+        // <x:p xmlns:x="urn:x"> is unwrapped to inline text in content, so it is inline here as well.
+        return $isHtml && in_array($name, self::BLOCK_ELEMENTS, true) ? "\n{$text}\n" : $text;
     }
 
     /**
@@ -911,10 +1032,12 @@ class RssParser
     }
 
     /**
-     * Serializes the children of an element as HTML. HTML has no namespaces, so every element is
-     * recreated by its local name: <h:p> becomes <p>, <svg:svg> becomes <svg>, and namespace
-     * declarations are dropped. Browsers recognise inline <svg> and <math> by name.
-     * This changes the markup's form only: scripts, event handlers and javascript: URLs are kept.
+     * Serializes the children of an element as HTML. HTML has no namespaces, so HTML, SVG and MathML
+     * elements are recreated by their local name: <h:p> becomes <p>, <svg:svg> becomes <svg>, and
+     * namespace declarations are dropped. Browsers recognise inline <svg> and <math> by name.
+     * Elements from any other namespace are replaced by their content, so a foreign <x:script> can't
+     * turn into a live <script>. Otherwise this changes the markup's form only: scripts, event
+     * handlers and javascript: URLs in the feed's own HTML are kept.
      *
      * @param \DOMElement $element
      * @return string
@@ -925,12 +1048,7 @@ class RssParser
         try {
             $doc = new \DOMDocument('1.0', 'UTF-8');
             $wrapper = $doc->appendChild($doc->createElement('div'));
-            foreach ($element->childNodes as $child) {
-                $copy = self::_importAsHtml($doc, $child);
-                if ($copy !== null) {
-                    $wrapper->appendChild($copy);
-                }
-            }
+            self::_appendChildrenAsHtml($doc, $element, $wrapper, $element->namespaceURI);
 
             $html = '';
             foreach ($wrapper->childNodes as $child) {
@@ -943,34 +1061,63 @@ class RssParser
     }
 
     /**
+     * Appends HTML copies of all children of $from to $to (see _appendAsHtml()).
+     *
      * @param \DOMDocument $doc
-     * @param \DOMNode $node
-     * @return \DOMNode|null a namespace-free copy of $node in $doc, or NULL for nodes HTML can't hold
+     * @param \DOMNode $from
+     * @param \DOMNode $to a node in $doc
+     * @param string|null $containerNs namespace of the element that contains the markup (see _isHtmlElement())
+     * @return void
      * @throws \DOMException
      */
-    private static function _importAsHtml(\DOMDocument $doc, \DOMNode $node): ?\DOMNode
+    private static function _appendChildrenAsHtml(\DOMDocument $doc, \DOMNode $from, \DOMNode $to, ?string $containerNs): void
+    {
+        foreach ($from->childNodes as $child) {
+            self::_appendAsHtml($doc, $child, $to, $containerNs);
+        }
+    }
+
+    /**
+     * Appends a namespace-free HTML copy of $node to $parent. Nodes HTML can't hold (processing
+     * instructions and the like) are left out.
+     *
+     * @param \DOMDocument $doc
+     * @param \DOMNode $node
+     * @param \DOMNode $parent a node in $doc
+     * @param string|null $containerNs namespace of the element that contains the markup (see _isHtmlElement())
+     * @return void
+     * @throws \DOMException
+     */
+    private static function _appendAsHtml(\DOMDocument $doc, \DOMNode $node, \DOMNode $parent, ?string $containerNs): void
     {
         if ($node instanceof \DOMElement) {
-            $element = $doc->createElement(self::_localName($node));
+            if (!self::_keepsElementName($node, $containerNs)) {
+                // An element from another namespace, or SVG or MathML outside its root, has no meaning in
+                // HTML, and recreating it by its local name could turn <x:script xmlns:x="urn:x"> into a
+                // live <script>. Its content goes
+                // straight into the parent, as a browser shows the text of an unknown element; an empty
+                // one (<x:br xmlns:x="urn:x"/>) simply adds nothing.
+                self::_appendChildrenAsHtml($doc, $node, $parent, $containerNs);
+                return;
+            }
+            // The local name, which drops declared prefixes (<h:p> becomes <p>, <svg:svg> <svg>).
+            // Elements with an undeclared prefix keep it (<o:p> stays <o:p>), so their names stay
+            // valid and unchanged.
+            // Always set for elements; the cast only narrows PHP's ?string type (see _nodeText()).
+            $element = $doc->createElement((string) $node->localName);
             foreach ($node->attributes as $attribute) {
                 $element->setAttribute($attribute->nodeName, $attribute->value);
             }
-            foreach ($node->childNodes as $child) {
-                $copy = self::_importAsHtml($doc, $child);
-                if ($copy !== null) {
-                    $element->appendChild($copy);
-                }
-            }
-            return $element;
+            $parent->appendChild($element);
+            self::_appendChildrenAsHtml($doc, $node, $element, $containerNs);
+            return;
         }
         // Check CDATA before text: DOMCdataSection extends DOMText.
         if ($node instanceof \DOMCdataSection || $node instanceof \DOMText) {
-            return $doc->createTextNode($node->data);
+            $parent->appendChild($doc->createTextNode($node->data));
+        } elseif ($node instanceof \DOMComment) {
+            $parent->appendChild($doc->createComment($node->data));
         }
-        if ($node instanceof \DOMComment) {
-            return $doc->createComment($node->data);
-        }
-        return null;
     }
 
     /**

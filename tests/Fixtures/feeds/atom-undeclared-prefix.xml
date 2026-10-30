@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <title>Undeclared prefixes</title>
+    <entry>
+        <title>Word-style markup</title>
+        <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">a<x:1a>b</x:1a><o:p>c</o:p></div></content>
+    </entry>
+</feed>
