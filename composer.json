@@ -2,6 +2,7 @@
     "name": "timvandendries/php-rss-parser",
     "description": "PHP RSS parser",
     "type": "library",
+    "license": "MIT",
     "autoload": {
         "psr-4": {
             "Timvandendries\\PhpRssParser\\": "src/"
