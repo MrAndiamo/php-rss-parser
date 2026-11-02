@@ -1,0 +1,142 @@
+/*!
+ * rss-block.css, part of timvandendries/php-rss-parser (MIT license).
+ * The look of rss-block.js. Restyle a block by setting the --rss-block-* properties on it or on .rss-block.
+ */
+.rss-block {
+    --rss-block-bg: #fff;
+    --rss-block-fg: #18181b;
+    --rss-block-muted: #71717a;
+    --rss-block-line: rgba(0, 0, 0, 0.09);
+    --rss-block-hover: rgba(0, 0, 0, 0.035);
+    --rss-block-accent: #f26522;
+    --rss-block-radius: 14px;
+    --rss-block-font-size: 14px;
+
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--rss-block-line);
+    border-radius: var(--rss-block-radius);
+    background: var(--rss-block-bg);
+    color: var(--rss-block-fg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    font: var(--rss-block-font-size)/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Dark always, or dark when the visitor's system is */
+.rss-block--dark {
+    --rss-block-bg: #18181b;
+    --rss-block-fg: #f4f4f5;
+    --rss-block-muted: #a1a1aa;
+    --rss-block-line: rgba(255, 255, 255, 0.1);
+    --rss-block-hover: rgba(255, 255, 255, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+    .rss-block--auto {
+        --rss-block-bg: #18181b;
+        --rss-block-fg: #f4f4f5;
+        --rss-block-muted: #a1a1aa;
+        --rss-block-line: rgba(255, 255, 255, 0.1);
+        --rss-block-hover: rgba(255, 255, 255, 0.05);
+    }
+}
+
+.rss-block__header {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--rss-block-line);
+}
+.rss-block__header::before {
+    content: '';
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--rss-block-accent);
+    opacity: 0.8;
+}
+.rss-block__name {
+    overflow: hidden;
+    color: inherit;
+    font-size: 0.965em;
+    font-weight: 600;
+    text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+a.rss-block__name:hover {
+    color: var(--rss-block-accent);
+}
+
+/* The list scrolls when the block gets a height */
+.rss-block__items {
+    flex: 1;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+.rss-block__item {
+    position: relative;
+    border-bottom: 1px solid var(--rss-block-line);
+}
+.rss-block__item:last-child {
+    border-bottom: 0;
+}
+.rss-block__item::before {
+    content: '';
+    position: absolute;
+    inset: 6px auto 6px 0;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: var(--rss-block-accent);
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+.rss-block__item:hover {
+    background: var(--rss-block-hover);
+}
+.rss-block__item:hover::before {
+    opacity: 1;
+}
+
+.rss-block__link {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    padding: 8px 14px;
+    color: inherit;
+    text-decoration: none;
+}
+a.rss-block__link:visited {
+    color: var(--rss-block-muted);
+}
+a.rss-block__link:hover,
+a.rss-block__link:hover .rss-block__date {
+    color: var(--rss-block-accent);
+}
+.rss-block__date {
+    flex-shrink: 0;
+    color: var(--rss-block-muted);
+    font-size: 0.8em;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+}
+.rss-block__title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rss-block__message {
+    margin: 0;
+    padding: 12px 14px;
+    color: var(--rss-block-muted);
+}

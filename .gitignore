@@ -4,3 +4,5 @@ private-key-thuis.pub
 CHANGELOG.md
 .phpunit.result.cache
 .phpunit.cache/
+# Copies FeedEndpointTest makes and removes again
+tests/Fixtures/feeds/temp-*.xml
