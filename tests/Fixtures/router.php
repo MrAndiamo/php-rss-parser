@@ -14,6 +14,9 @@
  *   /gzip-bomb                   a gzip response that expands to 20 MB
  *   /gzip                        a small gzip-compressed feed
  *   /user-agent                  an RSS feed whose title is the request's User-Agent
+ *   /conditional                 feeds/rss.xml with a fixed ETag and Last-Modified; 304 when the request matches either
+ *   /if-none-match               an RSS feed whose title is the request's If-None-Match, or "(none)"
+ *   /rate-limited?after=<value>  429 with Retry-After: <value>
  */
 
 declare(strict_types=1);
@@ -79,6 +82,29 @@ switch ($path) {
     case '/user-agent':
         header('Content-Type: application/xml');
         echo '<rss><channel><title>', htmlspecialchars($stringValue($_SERVER['HTTP_USER_AGENT'] ?? null)), '</title></channel></rss>';
+        return true;
+
+    case '/conditional':
+        $etag = '"v1"';
+        $lastModified = 'Wed, 01 Jan 2025 00:00:00 GMT';
+        header("ETag: {$etag}");
+        header("Last-Modified: {$lastModified}");
+        if ($stringValue($_SERVER['HTTP_IF_NONE_MATCH'] ?? null) === $etag
+            || $stringValue($_SERVER['HTTP_IF_MODIFIED_SINCE'] ?? null) === $lastModified) {
+            http_response_code(304);
+            return true;
+        }
+        $serveFeed('rss.xml');
+        return true;
+
+    case '/if-none-match':
+        header('Content-Type: application/xml');
+        echo '<rss><channel><title>', htmlspecialchars($stringValue($_SERVER['HTTP_IF_NONE_MATCH'] ?? null, '(none)')), '</title></channel></rss>';
+        return true;
+
+    case '/rate-limited':
+        http_response_code(429);
+        header('Retry-After: ' . $stringValue($_GET['after'] ?? null, '60'));
         return true;
 }
 

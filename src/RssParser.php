@@ -98,6 +98,30 @@ class RssParser
     }
 
     /**
+     * Like getFeed(), but only downloads the feed when it changed since an earlier fetch of the same
+     * URL. Pass the $etag and $lastModified of that earlier result: the server can then answer
+     * "304 Not Modified", and this returns a FeedObject with $notModified set and no title, items or
+     * error, so keep the items from before. The validators are sent with every redirect hop too.
+     *
+     * A validator with line breaks or other control characters, or longer than 1024 characters, is
+     * not sent. Without usable validators this is the same as getFeed(). A server that ignores them
+     * answers with the whole feed, also when it didn't change.
+     *
+     * @param string $url
+     * @param string|null $etag FeedObject::$etag from the earlier fetch
+     * @param string|null $lastModified FeedObject::$lastModified from the earlier fetch
+     * @param bool $allowPrivateNetworks see getFeed()
+     * @return FeedObject
+     * @throws \LogicException for a bug in this library; see getFeed() for what is and isn't thrown
+     */
+    public static function getFeedIfChanged(string $url, ?string $etag = null, ?string $lastModified = null, bool $allowPrivateNetworks = false): FeedObject
+    {
+        $validators = ['etag' => self::_headerValue($etag), 'lastModified' => self::_headerValue($lastModified)];
+
+        return self::_parseUrl($url, $allowPrivateNetworks, [self::class, '_buildFeed'], $validators);
+    }
+
+    /**
      * @param string $url an http(s) URL
      * @param bool $allowPrivateNetworks see getFeed()
      * @return \Timvandendries\PhpRssParser\objects\FeedObject
@@ -157,17 +181,33 @@ class RssParser
     }
 
     /**
+     * Fetches and parses the URL, and fills the FeedObject's response fields with what the last
+     * response said, also when the fetch failed.
+     *
      * @param string $url
      * @param bool $allowPrivateNetworks see getFeed()
      * @param callable(\SimpleXMLElement, string, string): FeedObject $builder see _parse()
+     * @param array{etag: string|null, lastModified: string|null} $validators see getFeedIfChanged()
      * @return FeedObject
      */
-    private static function _parseUrl(string $url, bool $allowPrivateNetworks, callable $builder): FeedObject
+    private static function _parseUrl(string $url, bool $allowPrivateNetworks, callable $builder, array $validators = ['etag' => null, 'lastModified' => null]): FeedObject
     {
-        return self::_parse(function () use ($url, $allowPrivateNetworks): array {
+        $response = ['status' => null, 'etag' => null, 'lastModified' => null, 'retryAfter' => null, 'size' => 0, 'notModified' => false];
+
+        $feed = self::_parse(function () use ($url, $allowPrivateNetworks, $validators, &$response): ?array {
             $target = self::_prepareUrl($url);
-            return [self::_fetch($target, $allowPrivateNetworks), $url, $target['safeUrl']];
+            $data = self::_fetch($target, $allowPrivateNetworks, $validators, $response);
+            return $data === null ? null : [$data, $url, $target['safeUrl']];
         }, $builder);
+
+        $feed->notModified = $response['notModified'];
+        $feed->status = $response['status'];
+        $feed->etag = $response['etag'];
+        $feed->lastModified = $response['lastModified'];
+        $feed->retryAfter = $response['retryAfter'];
+        $feed->responseSize = $response['size'];
+
+        return $feed;
     }
 
     /**
@@ -185,16 +225,22 @@ class RssParser
      * FeedObject with an error. Every such failure is a \RuntimeException; anything else is a
      * bug in this library and is not caught.
      *
-     * @param callable(): array{string, string, string} $load returns [body, feedUrl, source], where source is
-     *                                                       the URL or path as it may appear in error messages
+     * @param callable(): (array{string, string, string}|null) $load returns [body, feedUrl, source], where
+     *                                                             source is the URL or path as it may appear
+     *                                                             in error messages; null when the server
+     *                                                             answered 304 Not Modified
      * @param callable(\SimpleXMLElement, string, string): FeedObject $builder receives the parsed document,
      *                                                                         feedUrl and source
-     * @return FeedObject
+     * @return FeedObject an empty one when $load returned null
      */
     private static function _parse(callable $load, callable $builder): FeedObject
     {
         try {
-            [$data, $feedUrl, $source] = $load();
+            $loaded = $load();
+            if ($loaded === null) {
+                return new FeedObject();
+            }
+            [$data, $feedUrl, $source] = $loaded;
             return $builder(self::_parseXml($data, $source), $feedUrl, $source);
         } catch (\RuntimeException $e) {
             $feed = new FeedObject();
@@ -564,17 +610,30 @@ class RssParser
      *
      * @param array{url: string, safeUrl: string, host: string, port: int, isIp: bool} $target from _prepareUrl()
      * @param bool $allowPrivateNetworks see getFeed()
-     * @return string
+     * @param array{etag: string|null, lastModified: string|null} $validators sent as If-None-Match and
+     *                                                                     If-Modified-Since, when not null
+     * @param array{status: int|null, etag: string|null, lastModified: string|null, retryAfter: int|null, size: int, notModified: bool} $response
+     *        filled with what the last response said, also when this throws
+     * @return string|null the body, or null when the server answered 304 Not Modified to the validators
      * @throws \RuntimeException when the request fails or doesn't return a 2xx response with a body
      */
-    private static function _fetch(array $target, bool $allowPrivateNetworks): string
+    private static function _fetch(array $target, bool $allowPrivateNetworks, array $validators, array &$response): ?string
     {
         $deadline = microtime(true) + self::TIMEOUT;
         $startUrl = $target['safeUrl'];
         $redirected = false;
+        $requestHeaders = [];
+        if ($validators['etag'] !== null) {
+            $requestHeaders[] = "If-None-Match: {$validators['etag']}";
+        }
+        if ($validators['lastModified'] !== null) {
+            $requestHeaders[] = "If-Modified-Since: {$validators['lastModified']}";
+        }
         try {
             for ($redirects = 0; ; $redirects++) {
-                [$status, $data, $location] = self::_request($target, $allowPrivateNetworks, $deadline);
+                [$status, $data, $location, $headers] = self::_request($target, $allowPrivateNetworks, $deadline, $requestHeaders);
+                $response['status'] = $status;
+                $response['retryAfter'] = self::_retryAfter($headers['retry-after'] ?? null);
 
                 if ($status >= 300 && $status < 400 && $location !== '') {
                     if ($redirects >= self::MAX_REDIRECTS) {
@@ -584,9 +643,20 @@ class RssParser
                     $target = self::_prepareUrl($location);
                     continue;
                 }
+                // Only an answer to validators that were sent; otherwise it is an error like any other 3xx.
+                if ($status === 304 && $requestHeaders !== []) {
+                    $response['notModified'] = true;
+                    // The server may send newer validators with a 304; otherwise the ones sent stay valid.
+                    $response['etag'] = self::_headerValue($headers['etag'] ?? null) ?? $validators['etag'];
+                    $response['lastModified'] = self::_headerValue($headers['last-modified'] ?? null) ?? $validators['lastModified'];
+                    return null;
+                }
                 if ($status < 200 || $status >= 300) {
                     throw new \RuntimeException("HTTP {$status} for {$target['safeUrl']}");
                 }
+                $response['etag'] = self::_headerValue($headers['etag'] ?? null);
+                $response['lastModified'] = self::_headerValue($headers['last-modified'] ?? null);
+                $response['size'] = strlen($data);
                 if ($data === '') {
                     throw new \RuntimeException("Empty response (HTTP {$status}) for {$target['safeUrl']}");
                 }
@@ -599,6 +669,40 @@ class RssParser
             // Without this, an invalid or blocked redirect target reads as if the caller's URL was wrong.
             throw new \RuntimeException($e->getMessage() . " (after a redirect from {$startUrl})", 0, $e);
         }
+    }
+
+    /**
+     * A header value that is safe to send back in a request: validators come from earlier responses
+     * or the caller, so line breaks could otherwise add headers of their own.
+     *
+     * @param string|null $value
+     * @return string|null the value, or null when it is missing, empty, too long or has control characters
+     */
+    private static function _headerValue(?string $value): ?string
+    {
+        if ($value === null || $value === '' || strlen($value) > 1024 || preg_match('~[\x00-\x1F\x7F]~', $value) === 1) {
+            return null;
+        }
+        return $value;
+    }
+
+    /**
+     * @param string|null $value a Retry-After header: a number of seconds or an HTTP date
+     * @return int|null the seconds to wait, 0 for a date in the past, or null when there is no usable value
+     */
+    private static function _retryAfter(?string $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (ctype_digit($value)) {
+            return (int) $value;
+        }
+        $date = \DateTimeImmutable::createFromFormat('D, d M Y H:i:s \G\M\T', $value, new \DateTimeZone('UTC'));
+        if ($date === false) {
+            return null;
+        }
+        return max(0, $date->getTimestamp() - time());
     }
 
     /**
@@ -660,10 +764,13 @@ class RssParser
      * @param array{url: string, safeUrl: string, host: string, port: int, isIp: bool} $target from _prepareUrl()
      * @param bool $allowPrivateNetworks see getFeed()
      * @param float $deadline microtime(true) by which the whole fetch must be done
-     * @return array{0: int, 1: string, 2: string} status code, body, and the absolute redirect URL or ''
+     * @param list<string> $requestHeaders extra request headers, as "Name: value"
+     * @return array{0: int, 1: string, 2: string, 3: array<string, string>} status code, body, the absolute
+     *         redirect URL or '', and the ETag, Last-Modified and Retry-After response headers that were
+     *         present, by lowercase name
      * @throws \RuntimeException when the host is blocked, the time is up, the request fails or the body is too large
      */
-    private static function _request(array $target, bool $allowPrivateNetworks, float $deadline): array
+    private static function _request(array $target, bool $allowPrivateNetworks, float $deadline, array $requestHeaders = []): array
     {
         $safeUrl = $target['safeUrl'];
         $checkedAddresses = $allowPrivateNetworks ? [] : self::_resolvePublicAddresses($target['host']);
@@ -682,6 +789,10 @@ class RssParser
             CURLOPT_MAXFILESIZE     => self::MAX_RESPONSE_SIZE,
         ] + self::_connectionOptions($target, $allowPrivateNetworks, $checkedAddresses, $remainingMs);
 
+        if ($requestHeaders !== []) {
+            $options[CURLOPT_HTTPHEADER] = $requestHeaders;
+        }
+
         $body = '';
         $tooLarge = false;
         $options[CURLOPT_WRITEFUNCTION] = function ($cUrl, string $chunk) use (&$body, &$tooLarge): int {
@@ -691,6 +802,13 @@ class RssParser
             }
             $body .= $chunk;
             return strlen($chunk);
+        };
+        $headers = [];
+        $options[CURLOPT_HEADERFUNCTION] = function ($cUrl, string $line) use (&$headers): int {
+            if (preg_match('~^(etag|last-modified|retry-after):(.*)$~is', $line, $match) === 1) {
+                $headers[strtolower($match[1])] = trim($match[2]);
+            }
+            return strlen($line);
         };
 
         $cUrl = curl_init($target['url']);
@@ -719,6 +837,7 @@ class RssParser
             (int) curl_getinfo($cUrl, CURLINFO_RESPONSE_CODE),
             $body,
             (string) curl_getinfo($cUrl, CURLINFO_REDIRECT_URL),
+            $headers,
         ];
     }
 

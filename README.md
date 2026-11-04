@@ -288,6 +288,7 @@ if ($feed->hasError()) {
 | Method                                                | Reads                                                     |
 |-------------------------------------------------------|-----------------------------------------------------------|
 | `RssParser::getFeed($url, $allowPrivateNetworks = false)`         | An RSS or Atom feed from an `http(s)` URL       |
+| `RssParser::getFeedIfChanged($url, $etag = null, $lastModified = null, $allowPrivateNetworks = false)` | The same, only when it changed since an earlier fetch |
 | `RssParser::getRSSFeedByUrl($url, $allowPrivateNetworks = false)` | An RSS feed from a URL                          |
 | `RssParser::getAtomFeedByUrl($url, $allowPrivateNetworks = false)`| An Atom feed from a URL                         |
 | `RssParser::getFeedFromFile($path)`                   | An RSS or Atom feed from a local file                     |
@@ -350,17 +351,30 @@ class RefreshFeed implements ShouldQueue
 
     public function handle(): void
     {
-        $result = RssParser::getFeed($this->feed->feed_url);
+        $result = RssParser::getFeedIfChanged($this->feed->feed_url, $this->feed->etag, $this->feed->last_modified);
         if ($result->hasError()) {
             Log::warning("Feed {$this->feed->feed_url} failed: {$result->error}");
             return;  // keep the items from the last time it worked
         }
+        if ($result->notModified) {
+            return;  // nothing changed since the last fetch
+        }
 
-        // The items become JSON objects with the fields listed below
-        $this->feed->update(['items' => json_encode($result->items)]);
+        $this->feed->update([
+            // The items become JSON objects with the fields listed below
+            'items' => json_encode($result->items),
+            'etag' => $result->etag,
+            'last_modified' => $result->lastModified,
+        ]);
     }
 }
 ```
+
+### Fetching only when a feed changed
+
+A feed that is checked every few minutes usually hasn't changed. `getFeedIfChanged()` sends the `ETag` and `Last-Modified` of the earlier fetch, so the server can answer "304 Not Modified" with a few hundred bytes instead of the whole feed. Store `$feed->etag` and `$feed->lastModified` after each fetch and pass them the next time. When the server answers 304, `$feed->notModified` is `true` and the feed has no title, items or error: keep what you stored before. Servers that don't support this send the whole feed every time, so the result is the same as with `getFeed()`.
+
+When a server asks to slow down (`429 Too Many Requests` or `503` with a `Retry-After` header), `$feed->retryAfter` holds the number of seconds it asked for.
 
 ### What a feed contains
 
@@ -377,6 +391,13 @@ class RefreshFeed implements ShouldQueue
 | `updated`, `published` | Dates as the feed writes them                      |
 | `items`       | A list of `ItemObject`s; `null` when there is an error      |
 | `error`       | Why the feed couldn't be read, or `null`                    |
+| `notModified` | `true` when the server answered 304 to `getFeedIfChanged()` |
+| `status`      | The final HTTP status code, also for HTTP errors; `null` without a response |
+| `etag`, `lastModified` | The validators to pass to `getFeedIfChanged()` next time |
+| `retryAfter`  | The seconds a server asked to wait (`Retry-After`), or `null` |
+| `responseSize` | The size of the response body in bytes, after decompression |
+
+The last six are only set by the URL methods.
 
 `ItemObject`:
 
